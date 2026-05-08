@@ -15,7 +15,10 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -514,7 +517,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.34", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.35", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -2621,14 +2624,54 @@ public class MainActivity extends Activity {
         return button;
     }
 
-    private TextView makeCopyIconButton() {
-        TextView button = makeTinyButton("⧉");
-        button.setTextSize(16);
-        button.setTypeface(Typeface.DEFAULT);
-        button.setTextColor(Color.rgb(72, 84, 101));
+    private View makeCopyIconButton() {
+        CopyIconView button = new CopyIconView(this);
         button.setContentDescription("复制本条聊天内容");
         button.setBackground(makePanelBackground(Color.rgb(247, 250, 253), dp(16), 1, Color.rgb(220, 228, 238)));
         return button;
+    }
+
+    private class CopyIconView extends View {
+        private final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF backRect = new RectF();
+        private final RectF frontRect = new RectF();
+
+        CopyIconView(Context context) {
+            super(context);
+            setClickable(true);
+            setFocusable(true);
+            iconPaint.setColor(Color.rgb(72, 84, 101));
+            iconPaint.setStyle(Paint.Style.STROKE);
+            iconPaint.setStrokeCap(Paint.Cap.ROUND);
+            iconPaint.setStrokeJoin(Paint.Join.ROUND);
+            iconPaint.setStrokeWidth(Math.max(1.5f, getResources().getDisplayMetrics().density * 1.6f));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float centerX = getWidth() / 2f;
+            float centerY = getHeight() / 2f;
+            float rectWidth = dp(12);
+            float rectHeight = dp(13);
+            float offset = dp(3);
+            float radius = dp(3);
+
+            backRect.set(
+                    centerX - rectWidth / 2f - offset,
+                    centerY - rectHeight / 2f - offset,
+                    centerX + rectWidth / 2f - offset,
+                    centerY + rectHeight / 2f - offset
+            );
+            frontRect.set(
+                    centerX - rectWidth / 2f + offset,
+                    centerY - rectHeight / 2f + offset,
+                    centerX + rectWidth / 2f + offset,
+                    centerY + rectHeight / 2f + offset
+            );
+            canvas.drawRoundRect(backRect, radius, radius, iconPaint);
+            canvas.drawRoundRect(frontRect, radius, radius, iconPaint);
+        }
     }
 
     private void addTinyButton(LinearLayout row, TextView button) {
@@ -2650,6 +2693,8 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.35", "复制按钮改为自绘叠框图标。"));
+        v0.entries.add(new ReleaseEntry("0.35", "复制图标不再依赖缺字字体。"));
         v0.entries.add(new ReleaseEntry("0.34", "翻历史时新增回到最新箭头。"));
         v0.entries.add(new ReleaseEntry("0.34", "刷新聊天记录后自动到底部。"));
         v0.entries.add(new ReleaseEntry("0.33", "Codex 长请求改为后台任务回传。"));
@@ -4101,7 +4146,7 @@ public class MainActivity extends Activity {
         String messageText = text == null ? "" : text;
         renderRichContent(bubble, messageText, mine, allAttachments);
 
-        TextView copyButton = makeCopyIconButton();
+        View copyButton = makeCopyIconButton();
         String copyText = buildCopyText(messageText, allAttachments);
         copyButton.setOnClickListener(view -> copyMessageToClipboard(copyText));
 

@@ -1,5 +1,13 @@
 # YuanXiao Change Log
 
+## 0.40
+
+- Codex-session async receipt text is no longer inserted as a ChangE chat bubble.
+- Codex-session background completion notices now update the status bar and notification, then sync the real Codex history.
+- Keeps the dedicated session message stream focused on the actual user/Codex conversation.
+- Built and signature-verified local `yuanxiao-0.40.apk`; SHA256 `55cb98addc7df304b8eb196afe478386cd1dc8ed28fe29828ebd06038d2e773e`.
+- Latest Quark delivery remains `yuanxiao-0.38.apk` until the next `煮元宵`.
+
 ## 0.39
 
 - Plan CEO rows now open the dedicated CEO chat page from YuanXiao.

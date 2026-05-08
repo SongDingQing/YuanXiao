@@ -506,7 +506,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.39", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.40", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -2914,6 +2914,9 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.40", "Codex session 不再插入嫦娥回执气泡。"));
+        v0.entries.add(new ReleaseEntry("0.40", "后台完成提示改为状态栏和通知。"));
+        v0.entries.add(new ReleaseEntry("0.40", "session 对话流只保留真实对话。"));
         v0.entries.add(new ReleaseEntry("0.39", "点击计划 CEO 进入 CEO 聊天。"));
         v0.entries.add(new ReleaseEntry("0.39", "CEO 首次对话会自动建立会话。"));
         v0.entries.add(new ReleaseEntry("0.39", "CEO 聊天返回后回到计划页。"));
@@ -3356,7 +3359,6 @@ public class MainActivity extends Activity {
                 String sessionId = conversation.substring("codex-session-".length()).trim();
                 appendLog("Codex session 后台任务已完成。");
                 if (!sessionId.isEmpty() && sessionId.equals(selectedCodexSessionId)) {
-                    appendSessionTextMessage(sessionId, speaker, text, false, null, attachments);
                     setSessionDeliveryReplied();
                     syncCurrentSessionMessages(false);
                 }
@@ -3867,10 +3869,7 @@ public class MainActivity extends Activity {
         if (response.optBoolean("async", false)) {
             String taskId = response.optString("task_id", "");
             appendLogFromWorker(taskId.isEmpty() ? "Codex session 已转入后台处理。" : "Codex session 后台任务：" + taskId);
-            runOnUiThread(() -> {
-                appendSessionTextMessage(sessionId, "嫦娥", reply, false, null, new ArrayList<>());
-                setSessionDeliveryBackground();
-            });
+            runOnUiThread(() -> setSessionDeliveryBackground());
             return;
         }
         List<MessageAttachment> attachments = attachmentsFromJson(response.optJSONArray("files"));

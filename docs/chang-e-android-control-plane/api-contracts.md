@@ -73,3 +73,54 @@ Creates a new Codex session from YuanXiao.
 `POST /api/codex/session/rename`
 
 Renames a Codex session in local Codex state.
+
+## Plan View
+
+`GET /api/plan/projects?limit=`
+
+Returns local async orchestration state for YuanXiao's Plan tab. The bridge
+reads this from the private `YUANXIAO_PLAN_STATE_FILE`; no model call is made.
+
+Response shape:
+
+```json
+{
+  "status": "ok",
+  "projects": [
+    {
+      "id": "plan-id",
+      "title": "Project title",
+      "status": "running",
+      "progress": 40,
+      "updated_at": "2026-05-08T00:00:00+00:00",
+      "last_report": "Latest summary",
+      "ceo": {
+        "id": "ceo-id",
+        "name": "CEO",
+        "session_id": "codex-or-worker-session",
+        "status": "running",
+        "progress": 35,
+        "last_report": "CEO report"
+      },
+      "agents": [
+        {
+          "id": "agent-id",
+          "name": "Implementation Agent",
+          "role": "build",
+          "session_id": "worker-session",
+          "status": "running",
+          "progress": 60,
+          "last_report": "Agent report"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "project_count": 1,
+    "agent_count": 1,
+    "active_agents": 1,
+    "blocked_agents": 0
+  },
+  "quota_cost": "none_file_scan_only"
+}
+```

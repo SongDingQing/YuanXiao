@@ -26,6 +26,8 @@
     <string>__YUANXIAO_CODEX_HOME__/sessions</string>
     <key>YUANXIAO_CODEX_STATE_DB</key>
     <string>__YUANXIAO_CODEX_HOME__/state_5.sqlite</string>
+    <key>YUANXIAO_PLAN_STATE_FILE</key>
+    <string>__YUANXIAO_PLAN_STATE_FILE__</string>
     <key>YUANXIAO_HERMES_TIMEOUT_SECONDS</key>
     <string>300</string>
     <key>YUANXIAO_BRIDGE_MAX_REQUEST_BYTES</key>

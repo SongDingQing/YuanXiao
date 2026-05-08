@@ -76,6 +76,7 @@ public class MainActivity extends Activity {
     private static final String CODEX_SESSION_MESSAGES_URL = endpoint("/api/codex/session/messages");
     private static final String CODEX_SESSION_CREATE_URL = endpoint("/api/codex/session/create");
     private static final String CODEX_SESSION_RENAME_URL = endpoint("/api/codex/session/rename");
+    private static final String PLAN_PROJECTS_URL = endpoint("/api/plan/projects?limit=30");
     private static final String NOTIFICATION_CHANNEL_ID = "yuanxiao_messages";
     private static final String PREFS_NAME = "yuanxiao_state";
     private static final String KEY_LAST_INBOX_ID = "last_inbox_id";
@@ -85,6 +86,9 @@ public class MainActivity extends Activity {
     private static final String KEY_MAIN_CHAT_HISTORY = "main_chat_history";
     private static final String TARGET_HERMES = "hermes";
     private static final String TARGET_CODEX = "codex";
+    private static final String TAB_HERMES = "hermes";
+    private static final String TAB_CODEX = "codex";
+    private static final String TAB_PLAN = "plan";
     private static final String MAIN_CHAT_CONVERSATION = "yuanxiao-change-main";
     private static final int REQUEST_PICK_IMAGE = 1001;
     private static final int REQUEST_POST_NOTIFICATIONS = 1002;
@@ -99,6 +103,7 @@ public class MainActivity extends Activity {
     private static final long INBOX_POLL_INTERVAL_MS = 15_000L;
     private static final long DASHBOARD_POLL_INTERVAL_MS = 15_000L;
     private static final long SESSION_CHAT_POLL_INTERVAL_MS = 15_000L;
+    private static final long PLAN_POLL_INTERVAL_MS = 20_000L;
     private static final Pattern MARKDOWN_IMAGE_PATTERN = Pattern.compile("!\\[([^\\]]*)]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\)");
     private static final Pattern MARKDOWN_LINK_PATTERN = Pattern.compile("\\[([^\\]]+)]\\((https?://[^)\\s]+)(?:\\s+\"[^\"]*\")?\\)");
     private static final Pattern RAW_URL_PATTERN = Pattern.compile("https?://\\S+");
@@ -124,6 +129,7 @@ public class MainActivity extends Activity {
     private final Handler inboxHandler = new Handler(Looper.getMainLooper());
     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
     private final Handler sessionChatHandler = new Handler(Looper.getMainLooper());
+    private final Handler planHandler = new Handler(Looper.getMainLooper());
     private final Handler noticeHandler = new Handler(Looper.getMainLooper());
     private final Runnable hideNoticeRunnable = () -> {
         if (noticeBanner != null) {
@@ -160,13 +166,31 @@ public class MainActivity extends Activity {
             sessionChatHandler.postDelayed(this, SESSION_CHAT_POLL_INTERVAL_MS);
         }
     };
+    private final Runnable planPollRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!planVisible) {
+                return;
+            }
+            pollPlanView();
+            planHandler.postDelayed(this, PLAN_POLL_INTERVAL_MS);
+        }
+    };
     private LinearLayout chatView;
     private LinearLayout sessionChatView;
     private LinearLayout dashboardView;
+    private LinearLayout planView;
+    private LinearLayout bottomTabBar;
     private LinearLayout dashboardSessionList;
     private TextView dashboardSummary;
     private TextView dashboardUpdated;
     private TextView dashboardCreateButton;
+    private LinearLayout planProjectList;
+    private TextView planSummary;
+    private TextView planUpdated;
+    private TextView hermesTabButton;
+    private TextView codexTabButton;
+    private TextView planTabButton;
     private ScrollView scrollView;
     private LinearLayout messageList;
     private ScrollView sessionScrollView;
@@ -215,7 +239,9 @@ public class MainActivity extends Activity {
     private boolean inboxErrorLogged = false;
     private boolean dashboardVisible = false;
     private boolean sessionChatVisible = false;
+    private boolean planVisible = false;
     private boolean dashboardErrorLogged = false;
+    private boolean planErrorLogged = false;
     private boolean dashboardActiveExpanded = true;
     private boolean dashboardRecentExpanded = true;
     private boolean dashboardIdleExpanded = true;
@@ -224,6 +250,7 @@ public class MainActivity extends Activity {
     private volatile boolean inboxSyncInFlight = false;
     private volatile boolean dashboardSyncInFlight = false;
     private volatile boolean sessionSyncInFlight = false;
+    private volatile boolean planSyncInFlight = false;
     private volatile boolean sessionSendInFlight = false;
     private String lastInboxMessageId = "";
     private String selectedChatTarget = TARGET_HERMES;
@@ -258,6 +285,7 @@ public class MainActivity extends Activity {
         appendLog("图片会进入嫦娥识图链路。");
         appendLog("嫦娥的新回复会触发手机通知。");
         appendLog("元宵会自动接收嫦娥主动下发的消息。");
+        showChat();
         startInboxPolling();
     }
 
@@ -266,6 +294,7 @@ public class MainActivity extends Activity {
         stopInboxPolling();
         stopDashboardPolling();
         stopSessionChatPolling();
+        stopPlanPolling();
         executor.shutdownNow();
         super.onDestroy();
     }
@@ -281,6 +310,9 @@ public class MainActivity extends Activity {
         if (sessionChatVisible) {
             syncCurrentSessionMessages(false);
         }
+        if (planVisible) {
+            pollPlanView();
+        }
     }
 
     @Override
@@ -289,8 +321,8 @@ public class MainActivity extends Activity {
             showDashboard();
             return;
         }
-        if (!dashboardVisible) {
-            showDashboard();
+        if (dashboardVisible || planVisible) {
+            showChat();
             return;
         }
         super.onBackPressed();
@@ -362,6 +394,14 @@ public class MainActivity extends Activity {
                 1f
         ));
 
+        planView = buildPlanView();
+        planView.setVisibility(View.GONE);
+        screenRoot.addView(planView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+        ));
+
         sessionChatView = buildSessionChatView();
         sessionChatView.setVisibility(View.GONE);
         screenRoot.addView(sessionChatView, new LinearLayout.LayoutParams(
@@ -391,13 +431,9 @@ public class MainActivity extends Activity {
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView backButton = makeActionChip("返回", Color.rgb(236, 243, 249), Color.rgb(38, 83, 111));
-        backButton.setOnClickListener(view -> showDashboard());
-        header.addView(backButton, new LinearLayout.LayoutParams(dp(62), dp(42)));
-
         LinearLayout titleBlock = new LinearLayout(this);
         titleBlock.setOrientation(LinearLayout.VERTICAL);
-        titleBlock.setPadding(dp(10), 0, dp(8), 0);
+        titleBlock.setPadding(0, 0, dp(8), 0);
 
         TextView title = new TextView(this);
         title.setText("嫦娥");
@@ -432,7 +468,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.28", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.29", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -680,6 +716,13 @@ public class MainActivity extends Activity {
         updateChatTargetButtons();
         updateComposerOptionsButton();
         root.addView(composer, composerParams);
+
+        bottomTabBar = buildBottomTabBar();
+        screenRoot.addView(bottomTabBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(58)
+        ));
+        updateBottomTabs();
         setContentView(screenRoot);
     }
 
@@ -807,6 +850,115 @@ public class MainActivity extends Activity {
         return root;
     }
 
+    private LinearLayout buildBottomTabBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(10), dp(6), dp(10), dp(8));
+        bar.setBackground(makePanelBackground(Color.WHITE, 0, 1, Color.rgb(224, 231, 240)));
+
+        hermesTabButton = makeBottomTab("Hermes", TAB_HERMES);
+        bar.addView(hermesTabButton, weightedHeight(1f, dp(44)));
+
+        codexTabButton = makeBottomTab("Codex", TAB_CODEX);
+        LinearLayout.LayoutParams codexParams = weightedHeight(1f, dp(44));
+        codexParams.leftMargin = dp(8);
+        bar.addView(codexTabButton, codexParams);
+
+        planTabButton = makeBottomTab("计划", TAB_PLAN);
+        LinearLayout.LayoutParams planParams = weightedHeight(1f, dp(44));
+        planParams.leftMargin = dp(8);
+        bar.addView(planTabButton, planParams);
+        return bar;
+    }
+
+    private TextView makeBottomTab(String label, String tab) {
+        TextView button = makeActionChip(label, Color.rgb(244, 247, 252), Color.rgb(62, 75, 96));
+        button.setTextSize(13);
+        button.setOnClickListener(view -> {
+            if (TAB_CODEX.equals(tab)) {
+                showDashboard();
+            } else if (TAB_PLAN.equals(tab)) {
+                showPlan();
+            } else {
+                showChat();
+            }
+        });
+        return button;
+    }
+
+    private LinearLayout buildPlanView() {
+        LinearLayout plan = new LinearLayout(this);
+        plan.setOrientation(LinearLayout.VERTICAL);
+        plan.setPadding(dp(8), dp(8), dp(8), dp(8));
+        plan.setBackgroundColor(Color.rgb(246, 247, 251));
+
+        LinearLayout headerCard = new LinearLayout(this);
+        headerCard.setOrientation(LinearLayout.VERTICAL);
+        headerCard.setPadding(dp(12), dp(10), dp(12), dp(10));
+        headerCard.setBackground(makePanelBackground(Color.WHITE, dp(18), 1, Color.rgb(228, 233, 241)));
+        plan.addView(headerCard, matchWrap());
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+
+        TextView title = new TextView(this);
+        title.setText("计划视图");
+        title.setTextSize(20);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(Color.rgb(26, 32, 43));
+        titleBlock.addView(title);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText("CEO 分解 · Agent 异步汇报");
+        subtitle.setTextSize(12);
+        subtitle.setTextColor(Color.rgb(91, 101, 116));
+        titleBlock.addView(subtitle);
+        top.addView(titleBlock, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView refreshButton = makeActionChip("刷新", Color.rgb(239, 246, 239), Color.rgb(50, 114, 62));
+        refreshButton.setTextSize(12);
+        refreshButton.setOnClickListener(view -> pollPlanView());
+        top.addView(refreshButton, new LinearLayout.LayoutParams(dp(64), dp(38)));
+        headerCard.addView(top, matchWrap());
+
+        LinearLayout stats = new LinearLayout(this);
+        stats.setOrientation(LinearLayout.HORIZONTAL);
+        stats.setPadding(0, dp(8), 0, 0);
+        planSummary = makeDashboardStat("读取中", "项目");
+        stats.addView(planSummary, weightedHeight(1f, dp(38)));
+        planUpdated = makeDashboardStat("等待刷新", "更新时间");
+        LinearLayout.LayoutParams updatedParams = weightedHeight(1f, dp(38));
+        updatedParams.leftMargin = dp(8);
+        stats.addView(planUpdated, updatedParams);
+        headerCard.addView(stats, matchWrap());
+
+        planProjectList = new LinearLayout(this);
+        planProjectList.setOrientation(LinearLayout.VERTICAL);
+        planProjectList.setPadding(dp(6), dp(6), dp(6), dp(6));
+        planProjectList.setBackground(makePanelBackground(Color.WHITE, dp(18), 1, Color.rgb(226, 232, 240)));
+
+        ScrollView projectScroll = new ScrollView(this);
+        projectScroll.setFillViewport(true);
+        projectScroll.addView(planProjectList, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT
+        ));
+        LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+        );
+        listParams.topMargin = dp(8);
+        plan.addView(projectScroll, listParams);
+        renderPlanLoading();
+        return plan;
+    }
+
     private LinearLayout buildDashboardView() {
         LinearLayout dashboard = new LinearLayout(this);
         dashboard.setOrientation(LinearLayout.VERTICAL);
@@ -827,14 +979,14 @@ public class MainActivity extends Activity {
         titleBlock.setOrientation(LinearLayout.VERTICAL);
 
         TextView title = new TextView(this);
-        title.setText("嫦娥 Dashboard");
+        title.setText("Codex");
         title.setTextSize(20);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(Color.rgb(26, 32, 43));
         titleBlock.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("轻量会话列表 · 点击进入对话");
+        subtitle.setText("会话列表 · 点击进入独立 session");
         subtitle.setTextSize(12);
         subtitle.setTextColor(Color.rgb(91, 101, 116));
         titleBlock.addView(subtitle);
@@ -854,10 +1006,6 @@ public class MainActivity extends Activity {
         createParams.rightMargin = dp(8);
         top.addView(dashboardCreateButton, createParams);
 
-        TextView chatButton = makeActionChip("聊天", Color.rgb(31, 111, 235), Color.WHITE);
-        chatButton.setTextSize(12);
-        chatButton.setOnClickListener(view -> showChat());
-        top.addView(chatButton, new LinearLayout.LayoutParams(dp(58), dp(38)));
         headerCard.addView(top, matchWrap());
 
         LinearLayout stats = new LinearLayout(this);
@@ -906,43 +1054,63 @@ public class MainActivity extends Activity {
     }
 
     private void showDashboard() {
-        dashboardVisible = true;
-        sessionChatVisible = false;
-        stopSessionChatPolling();
-        if (dashboardView != null) {
-            dashboardView.setVisibility(View.VISIBLE);
-        }
-        if (chatView != null) {
-            chatView.setVisibility(View.GONE);
-        }
-        if (sessionChatView != null) {
-            sessionChatView.setVisibility(View.GONE);
-        }
-        startDashboardPolling();
-        pollCodexDashboard();
+        showTopLevelTab(TAB_CODEX);
     }
 
     private void showChat() {
-        dashboardVisible = false;
+        showTopLevelTab(TAB_HERMES);
+    }
+
+    private void showPlan() {
+        showTopLevelTab(TAB_PLAN);
+    }
+
+    private void showTopLevelTab(String tab) {
+        boolean showCodex = TAB_CODEX.equals(tab);
+        boolean showPlan = TAB_PLAN.equals(tab);
+        dashboardVisible = showCodex;
+        planVisible = showPlan;
         sessionChatVisible = false;
         stopSessionChatPolling();
         if (dashboardView != null) {
-            dashboardView.setVisibility(View.GONE);
+            dashboardView.setVisibility(showCodex ? View.VISIBLE : View.GONE);
+        }
+        if (planView != null) {
+            planView.setVisibility(showPlan ? View.VISIBLE : View.GONE);
         }
         if (sessionChatView != null) {
             sessionChatView.setVisibility(View.GONE);
         }
         if (chatView != null) {
-            chatView.setVisibility(View.VISIBLE);
+            chatView.setVisibility(!showCodex && !showPlan ? View.VISIBLE : View.GONE);
         }
-        stopDashboardPolling();
+        if (bottomTabBar != null) {
+            bottomTabBar.setVisibility(View.VISIBLE);
+        }
+        if (showCodex) {
+            startDashboardPolling();
+            pollCodexDashboard();
+        } else {
+            stopDashboardPolling();
+        }
+        if (showPlan) {
+            startPlanPolling();
+            pollPlanView();
+        } else {
+            stopPlanPolling();
+        }
+        updateBottomTabs();
     }
 
     private void showSessionChat() {
         dashboardVisible = false;
+        planVisible = false;
         sessionChatVisible = true;
         if (dashboardView != null) {
             dashboardView.setVisibility(View.GONE);
+        }
+        if (planView != null) {
+            planView.setVisibility(View.GONE);
         }
         if (chatView != null) {
             chatView.setVisibility(View.GONE);
@@ -950,7 +1118,11 @@ public class MainActivity extends Activity {
         if (sessionChatView != null) {
             sessionChatView.setVisibility(View.VISIBLE);
         }
+        if (bottomTabBar != null) {
+            bottomTabBar.setVisibility(View.GONE);
+        }
         stopDashboardPolling();
+        stopPlanPolling();
         updateSessionHeader();
         renderCurrentSessionHistory();
         startSessionChatPolling();
@@ -975,6 +1147,34 @@ public class MainActivity extends Activity {
         sessionChatHandler.removeCallbacks(sessionChatPollRunnable);
     }
 
+    private void startPlanPolling() {
+        planHandler.removeCallbacks(planPollRunnable);
+        planHandler.postDelayed(planPollRunnable, PLAN_POLL_INTERVAL_MS);
+    }
+
+    private void stopPlanPolling() {
+        planHandler.removeCallbacks(planPollRunnable);
+    }
+
+    private void updateBottomTabs() {
+        styleBottomTab(hermesTabButton, !dashboardVisible && !planVisible && !sessionChatVisible);
+        styleBottomTab(codexTabButton, dashboardVisible || sessionChatVisible);
+        styleBottomTab(planTabButton, planVisible);
+    }
+
+    private void styleBottomTab(TextView button, boolean selected) {
+        if (button == null) {
+            return;
+        }
+        if (selected) {
+            button.setTextColor(Color.WHITE);
+            button.setBackground(makePanelBackground(Color.rgb(31, 111, 235), dp(15), 0, Color.TRANSPARENT));
+        } else {
+            button.setTextColor(Color.rgb(62, 75, 96));
+            button.setBackground(makePanelBackground(Color.rgb(244, 247, 252), dp(15), 1, Color.rgb(224, 231, 240)));
+        }
+    }
+
     private void renderDashboardLoading() {
         if (dashboardSessionList == null) {
             return;
@@ -987,6 +1187,20 @@ public class MainActivity extends Activity {
         loading.setGravity(Gravity.CENTER);
         loading.setPadding(dp(12), dp(20), dp(12), dp(20));
         dashboardSessionList.addView(loading, matchWrap());
+    }
+
+    private void renderPlanLoading() {
+        if (planProjectList == null) {
+            return;
+        }
+        planProjectList.removeAllViews();
+        TextView loading = new TextView(this);
+        loading.setText("正在读取计划状态...");
+        loading.setTextSize(14);
+        loading.setTextColor(Color.rgb(91, 101, 116));
+        loading.setGravity(Gravity.CENTER);
+        loading.setPadding(dp(12), dp(20), dp(12), dp(20));
+        planProjectList.addView(loading, matchWrap());
     }
 
     private void pollCodexDashboard() {
@@ -1007,6 +1221,28 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> renderDashboardError(exception.getMessage()));
             } finally {
                 dashboardSyncInFlight = false;
+            }
+        });
+    }
+
+    private void pollPlanView() {
+        if (planSyncInFlight) {
+            return;
+        }
+        planSyncInFlight = true;
+        executor.execute(() -> {
+            try {
+                JSONObject response = getJson(PLAN_PROJECTS_URL);
+                runOnUiThread(() -> renderPlanProjects(response));
+                planErrorLogged = false;
+            } catch (Exception exception) {
+                if (!planErrorLogged) {
+                    planErrorLogged = true;
+                    appendLogFromWorker("计划视图同步失败：" + exception.getMessage());
+                }
+                runOnUiThread(() -> renderPlanError(exception.getMessage()));
+            } finally {
+                planSyncInFlight = false;
             }
         });
     }
@@ -1224,6 +1460,25 @@ public class MainActivity extends Activity {
         dashboardSessionList.addView(error, matchWrap());
     }
 
+    private void renderPlanError(String message) {
+        if (planSummary != null) {
+            planSummary.setText("不可用\n计划");
+        }
+        if (planUpdated != null) {
+            planUpdated.setText(stamp() + "\n更新时间");
+        }
+        if (planProjectList == null) {
+            return;
+        }
+        planProjectList.removeAllViews();
+        TextView error = new TextView(this);
+        error.setText("暂时无法读取计划状态：" + message);
+        error.setTextSize(14);
+        error.setTextColor(Color.rgb(166, 63, 40));
+        error.setPadding(dp(12), dp(16), dp(12), dp(16));
+        planProjectList.addView(error, matchWrap());
+    }
+
     private void renderCodexDashboard(JSONObject response) {
         lastDashboardResponse = response;
         JSONObject process = response.optJSONObject("process");
@@ -1269,6 +1524,241 @@ public class MainActivity extends Activity {
         addDashboardSection("recent", recentSessions);
         addDashboardSection("idle", idleSessions);
         addDashboardSection("archived", archivedSessions);
+    }
+
+    private void renderPlanProjects(JSONObject response) {
+        JSONObject summary = response.optJSONObject("summary");
+        int projectCount = summary == null ? 0 : summary.optInt("project_count", 0);
+        int agentCount = summary == null ? 0 : summary.optInt("agent_count", 0);
+        int activeAgents = summary == null ? 0 : summary.optInt("active_agents", 0);
+        int blockedAgents = summary == null ? 0 : summary.optInt("blocked_agents", 0);
+        if (planSummary != null) {
+            planSummary.setText(projectCount + " 项 · " + activeAgents + "/" + agentCount + "\nAgent");
+        }
+        if (planUpdated != null) {
+            String updatedAt = response.optString("updated_at", response.optString("time", ""));
+            String label = updatedAt.trim().isEmpty() ? stamp() : formatDashboardTime(updatedAt);
+            planUpdated.setText(label + (blockedAgents > 0 ? " · 阻塞 " + blockedAgents : "") + "\n更新时间");
+        }
+        if (planProjectList == null) {
+            return;
+        }
+        planProjectList.removeAllViews();
+        JSONArray projects = response.optJSONArray("projects");
+        if (projects == null || projects.length() == 0) {
+            TextView empty = new TextView(this);
+            empty.setText("暂无计划项目。");
+            empty.setTextSize(14);
+            empty.setTextColor(Color.rgb(91, 101, 116));
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(12), dp(28), dp(12), dp(28));
+            planProjectList.addView(empty, matchWrap());
+            return;
+        }
+        for (int i = 0; i < projects.length(); i++) {
+            JSONObject project = projects.optJSONObject(i);
+            if (project == null) {
+                continue;
+            }
+            LinearLayout.LayoutParams params = sessionRowParams();
+            planProjectList.addView(makePlanProjectCard(project), params);
+        }
+    }
+
+    private LinearLayout makePlanProjectCard(JSONObject project) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(10), dp(9), dp(10), dp(9));
+        card.setBackground(makePanelBackground(Color.rgb(247, 249, 252), dp(14), 1, Color.rgb(229, 234, 242)));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = new TextView(this);
+        title.setText(firstNonEmpty(project.optString("title", ""), project.optString("name", ""), "未命名项目"));
+        title.setTextSize(15);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(Color.rgb(29, 36, 48));
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        top.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView status = makePlanStatusBadge(project.optString("status", "queued"));
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(dp(62), dp(28));
+        statusParams.leftMargin = dp(8);
+        top.addView(status, statusParams);
+        card.addView(top, matchWrap());
+
+        LinearLayout progressRow = new LinearLayout(this);
+        progressRow.setOrientation(LinearLayout.HORIZONTAL);
+        progressRow.setGravity(Gravity.CENTER_VERTICAL);
+        progressRow.setPadding(0, dp(7), 0, 0);
+        progressRow.addView(makeProgressBar(progressFromJson(project)), new LinearLayout.LayoutParams(0, dp(8), 1f));
+        TextView updated = new TextView(this);
+        updated.setText(formatDashboardTime(project.optString("updated_at", "")));
+        updated.setTextSize(11);
+        updated.setTextColor(Color.rgb(112, 121, 137));
+        updated.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams updatedParams = new LinearLayout.LayoutParams(dp(82), LinearLayout.LayoutParams.WRAP_CONTENT);
+        updatedParams.leftMargin = dp(8);
+        progressRow.addView(updated, updatedParams);
+        card.addView(progressRow, matchWrap());
+
+        JSONObject ceo = project.optJSONObject("ceo");
+        if (ceo != null) {
+            LinearLayout.LayoutParams ceoParams = matchWrap();
+            ceoParams.topMargin = dp(8);
+            card.addView(makePlanPersonRow("CEO", ceo), ceoParams);
+        }
+
+        JSONArray agents = project.optJSONArray("agents");
+        if (agents != null) {
+            int maxRows = Math.min(agents.length(), 6);
+            for (int i = 0; i < maxRows; i++) {
+                JSONObject agent = agents.optJSONObject(i);
+                if (agent == null) {
+                    continue;
+                }
+                LinearLayout.LayoutParams rowParams = matchWrap();
+                rowParams.topMargin = dp(6);
+                card.addView(makePlanPersonRow("Agent", agent), rowParams);
+            }
+            if (agents.length() > maxRows) {
+                TextView more = new TextView(this);
+                more.setText("还有 " + (agents.length() - maxRows) + " 个 Agent");
+                more.setTextSize(12);
+                more.setTextColor(Color.rgb(104, 112, 126));
+                more.setPadding(dp(4), dp(6), dp(4), 0);
+                card.addView(more, matchWrap());
+            }
+        }
+
+        String report = compactOneLine(project.optString("last_report", ""), 96);
+        if (!report.isEmpty()) {
+            TextView reportView = new TextView(this);
+            reportView.setText(report);
+            reportView.setTextSize(12);
+            reportView.setTextColor(Color.rgb(91, 101, 116));
+            reportView.setPadding(dp(4), dp(7), dp(4), 0);
+            reportView.setSingleLine(true);
+            reportView.setEllipsize(TextUtils.TruncateAt.END);
+            card.addView(reportView, matchWrap());
+        }
+        return card;
+    }
+
+    private LinearLayout makePlanPersonRow(String prefix, JSONObject person) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(8), dp(6), dp(8), dp(6));
+        row.setBackground(makePanelBackground(Color.WHITE, dp(12), 1, Color.rgb(230, 235, 243)));
+
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+
+        TextView name = new TextView(this);
+        name.setText(prefix + " · " + planPersonName(person));
+        name.setTextSize(13);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setTextColor(Color.rgb(34, 45, 62));
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        textBlock.addView(name);
+
+        String report = compactOneLine(person.optString("last_report", person.optString("current_task", "")), 72);
+        TextView detail = new TextView(this);
+        detail.setText(report.isEmpty() ? planStatusLabel(person.optString("status", "queued")) : report);
+        detail.setTextSize(11);
+        detail.setTextColor(Color.rgb(104, 112, 126));
+        detail.setSingleLine(true);
+        detail.setEllipsize(TextUtils.TruncateAt.END);
+        textBlock.addView(detail);
+        row.addView(textBlock, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView progress = makeBadge(progressFromJson(person) + "%", Color.rgb(236, 243, 249), Color.rgb(38, 83, 111));
+        progress.setTextSize(11);
+        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(48), dp(26));
+        progressParams.leftMargin = dp(8);
+        row.addView(progress, progressParams);
+        return row;
+    }
+
+    private TextView makePlanStatusBadge(String status) {
+        String normalized = status == null ? "" : status.trim().toLowerCase(Locale.US);
+        int bg = Color.rgb(241, 242, 245);
+        int fg = Color.rgb(102, 111, 125);
+        if ("running".equals(normalized) || "active".equals(normalized)) {
+            bg = Color.rgb(232, 247, 240);
+            fg = Color.rgb(20, 120, 82);
+        } else if ("blocked".equals(normalized) || "failed".equals(normalized)) {
+            bg = Color.rgb(255, 240, 235);
+            fg = Color.rgb(166, 63, 40);
+        } else if ("review".equals(normalized) || "waiting".equals(normalized)) {
+            bg = Color.rgb(247, 241, 226);
+            fg = Color.rgb(111, 78, 24);
+        }
+        TextView badge = makeBadge(planStatusLabel(normalized), bg, fg);
+        badge.setTextSize(11);
+        return badge;
+    }
+
+    private String planStatusLabel(String status) {
+        String normalized = status == null ? "" : status.trim().toLowerCase(Locale.US);
+        if ("running".equals(normalized) || "active".equals(normalized)) {
+            return "进行";
+        }
+        if ("blocked".equals(normalized)) {
+            return "阻塞";
+        }
+        if ("failed".equals(normalized)) {
+            return "失败";
+        }
+        if ("done".equals(normalized) || "completed".equals(normalized)) {
+            return "完成";
+        }
+        if ("review".equals(normalized)) {
+            return "复核";
+        }
+        if ("waiting".equals(normalized)) {
+            return "等待";
+        }
+        return "排队";
+    }
+
+    private String planPersonName(JSONObject person) {
+        return firstNonEmpty(
+                person.optString("name", ""),
+                person.optString("title", ""),
+                person.optString("role", ""),
+                "未命名"
+        );
+    }
+
+    private int progressFromJson(JSONObject item) {
+        double raw = item.optDouble("progress", item.optDouble("progress_percent", 0));
+        if (raw > 0 && raw <= 1) {
+            raw *= 100;
+        }
+        return Math.max(0, Math.min(100, (int) Math.round(raw)));
+    }
+
+    private LinearLayout makeProgressBar(int progress) {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setWeightSum(100f);
+        bar.setBackground(makePanelBackground(Color.rgb(228, 234, 242), dp(4), 0, Color.TRANSPARENT));
+        if (progress > 0) {
+            View fill = new View(this);
+            fill.setBackground(makePanelBackground(Color.rgb(31, 111, 235), dp(4), 0, Color.TRANSPARENT));
+            bar.addView(fill, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, progress));
+        }
+        if (progress < 100) {
+            View rest = new View(this);
+            bar.addView(rest, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, 100 - progress)));
+        }
+        return bar;
     }
 
     private String normalizedSessionStatus(JSONObject session) {
@@ -1616,6 +2106,9 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.29", "底部新增 Hermes、Codex、计划三 Tab。"));
+        v0.entries.add(new ReleaseEntry("0.29", "计划视图可读取异步 Agent 项目状态。"));
+        v0.entries.add(new ReleaseEntry("0.29", "新增独立计划调度状态脚本。"));
         v0.entries.add(new ReleaseEntry("0.28", "Dashboard 和收件箱轮询避免叠请求。"));
         v0.entries.add(new ReleaseEntry("0.28", "bridge 结构化请求日志增加裁剪。"));
         v0.entries.add(new ReleaseEntry("0.27", "长 Codex session 等待时间提升到 15 分钟。"));

@@ -202,6 +202,7 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
                     "inbox": True,
                     "codex_session_create": True,
                     "codex_session_rename": True,
+                    "plan_view": True,
                     "bridge_timeout_seconds": HERMES_BRIDGE_TIMEOUT_SECONDS,
                     "request_socket_timeout_seconds": REQUEST_SOCKET_TIMEOUT_SECONDS,
                     "max_request_bytes": MAX_REQUEST_BYTES,
@@ -235,6 +236,25 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
                     {
                         "status": "error",
                         "error": "codex_dashboard_unavailable",
+                        "detail": str(exc),
+                        "server": "change",
+                        "time": now_iso(),
+                    },
+                    status=504,
+                )
+                return
+            response["server"] = "change"
+            response.setdefault("time", now_iso())
+            self._send_json(response, status=status)
+            return
+        if parsed.path == "/api/plan/projects":
+            try:
+                status, response = forward_bridge_get("/api/plan/projects", parsed.query)
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "plan_view_unavailable",
                         "detail": str(exc),
                         "server": "change",
                         "time": now_iso(),

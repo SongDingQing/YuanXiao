@@ -10,6 +10,7 @@ and professional/code work to Codex.
 - Android APK: `android/YuanXiao`
 - Public relay service: `server/yuanxiao-server`
 - Mac mini bridge: `bridge/yuanxiao-hermes-bridge`
+- Async plan-state helper: `bridge/yuanxiao-hermes-bridge/yuanxiao_agent_scheduler.py`
 - Deployment templates and scripts: `ops`
 
 Private infrastructure details, including relay hosts, IP addresses, SSH users,
@@ -18,9 +19,10 @@ Use the example config files as templates.
 
 ## Current Version
 
-- App version: `0.28`
-- APK delivery name: `yuanxiao-0.28.apk`
+- App version: `0.29`
+- Next APK delivery name: `yuanxiao-0.29.apk`
+- Latest Quark delivery APK: `yuanxiao-0.28.apk`
 - Installed Android label: `元宵`
-- Latest major behavior: compact dashboard rows, persistent main ChangE chat,
-  Codex session chat/history sync, Codex session create/rename, long-session
-  timeout handling, and duplicate-poll guards.
+- Latest major behavior: bottom Hermes/Codex/Plan tabs, compact Codex session
+  rows, persistent main ChangE chat, Codex session chat/history sync, Codex
+  session create/rename, duplicate-poll guards, and a plan-state API foundation.

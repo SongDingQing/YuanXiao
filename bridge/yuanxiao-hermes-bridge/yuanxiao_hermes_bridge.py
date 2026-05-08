@@ -77,6 +77,8 @@ CODEX_SESSION_MESSAGE_CACHE: dict[str, dict[str, Any]] = {}
 CODEX_SESSION_MESSAGE_CACHE_LOCK = threading.Lock()
 BRIDGE_REQUEST_LOG = Path(os.environ.get("YUANXIAO_BRIDGE_REQUEST_LOG", str(BRIDGE_DIR / "logs/bridge-requests.jsonl")))
 BRIDGE_REQUEST_LOG_MAX_BYTES = int(os.environ.get("YUANXIAO_BRIDGE_REQUEST_LOG_MAX_BYTES", "1048576"))
+PLAN_STATE_FILE = Path(os.environ.get("YUANXIAO_PLAN_STATE_FILE", str(Path.home() / ".yuanxiao/plan-state.json")))
+MAX_PLAN_PROJECTS = int(os.environ.get("YUANXIAO_MAX_PLAN_PROJECTS", "50"))
 
 
 def now_iso() -> str:
@@ -105,6 +107,110 @@ def compact_preview_text(text: str, limit: int = MAX_CODEX_SESSION_PREVIEW_CHARS
     if len(value) <= limit:
         return value
     return value[: max(1, limit - 1)].rstrip() + "…"
+
+
+def normalized_progress(value: Any) -> int:
+    try:
+        progress = float(value or 0)
+    except (TypeError, ValueError):
+        progress = 0
+    if 0 < progress <= 1:
+        progress *= 100
+    return max(0, min(100, int(round(progress))))
+
+
+def normalize_plan_person(raw: Any, default_name: str = "未命名") -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raw = {}
+    status = str(raw.get("status") or "queued").strip().lower() or "queued"
+    return {
+        "id": str(raw.get("id") or raw.get("session_id") or uuid.uuid4().hex[:8]),
+        "name": str(raw.get("name") or raw.get("title") or default_name).strip() or default_name,
+        "role": str(raw.get("role") or "").strip(),
+        "session_id": str(raw.get("session_id") or "").strip(),
+        "status": status,
+        "progress": normalized_progress(raw.get("progress", raw.get("progress_percent", 0))),
+        "current_task": compact_preview_text(str(raw.get("current_task") or ""), 120),
+        "last_report": compact_preview_text(str(raw.get("last_report") or raw.get("report") or ""), 160),
+        "updated_at": str(raw.get("updated_at") or "").strip(),
+    }
+
+
+def read_plan_projects(limit: int = 30) -> dict[str, Any]:
+    if not PLAN_STATE_FILE.exists():
+        return {
+            "status": "ok",
+            "projects": [],
+            "summary": {
+                "project_count": 0,
+                "agent_count": 0,
+                "active_agents": 0,
+                "blocked_agents": 0,
+            },
+            "updated_at": "",
+            "state_file": compact_path(str(PLAN_STATE_FILE)),
+            "quota_cost": "none_file_scan_only",
+            "time": now_iso(),
+        }
+    try:
+        data = json.loads(PLAN_STATE_FILE.read_text(encoding="utf-8") or "{}")
+    except Exception as exc:
+        return {
+            "status": "error",
+            "error": "plan_state_read_failed",
+            "detail": str(exc),
+            "projects": [],
+            "summary": {
+                "project_count": 0,
+                "agent_count": 0,
+                "active_agents": 0,
+                "blocked_agents": 0,
+            },
+            "quota_cost": "none_file_scan_only",
+            "time": now_iso(),
+        }
+
+    raw_projects = data.get("projects") if isinstance(data.get("projects"), list) else []
+    projects: list[dict[str, Any]] = []
+    agent_count = 0
+    active_agents = 0
+    blocked_agents = 0
+    for index, raw_project in enumerate(raw_projects[: max(1, min(MAX_PLAN_PROJECTS, limit))]):
+        if not isinstance(raw_project, dict):
+            continue
+        agents = [
+            normalize_plan_person(agent, f"Agent {agent_index + 1}")
+            for agent_index, agent in enumerate(raw_project.get("agents") if isinstance(raw_project.get("agents"), list) else [])
+        ]
+        agent_count += len(agents)
+        active_agents += sum(1 for agent in agents if agent.get("status") in {"active", "running"})
+        blocked_agents += sum(1 for agent in agents if agent.get("status") in {"blocked", "failed"})
+        project = {
+            "id": str(raw_project.get("id") or f"project-{index + 1}"),
+            "title": str(raw_project.get("title") or raw_project.get("name") or "未命名项目").strip() or "未命名项目",
+            "status": str(raw_project.get("status") or "queued").strip().lower() or "queued",
+            "progress": normalized_progress(raw_project.get("progress", raw_project.get("progress_percent", 0))),
+            "updated_at": str(raw_project.get("updated_at") or data.get("updated_at") or "").strip(),
+            "last_report": compact_preview_text(str(raw_project.get("last_report") or ""), 180),
+            "ceo": normalize_plan_person(raw_project.get("ceo"), "CEO"),
+            "agents": agents,
+        }
+        projects.append(project)
+
+    return {
+        "status": "ok",
+        "projects": projects,
+        "summary": {
+            "project_count": len(projects),
+            "agent_count": agent_count,
+            "active_agents": active_agents,
+            "blocked_agents": blocked_agents,
+        },
+        "updated_at": str(data.get("updated_at") or "").strip(),
+        "state_file": compact_path(str(PLAN_STATE_FILE)),
+        "quota_cost": "none_file_scan_only",
+        "time": now_iso(),
+    }
 
 
 def last_visible_session_preview(session_id: str, rollout_path: str, fallback: str = "") -> str:
@@ -1382,6 +1488,7 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                     "codex_session_history": True,
                     "codex_session_create": True,
                     "codex_session_rename": True,
+                    "plan_view": True,
                     "image_input": "enabled",
                     "image_recognition": "change-vision",
                     "vision_engine": f"codex-cli:{CODEX_VISION_MODEL}",
@@ -1397,6 +1504,16 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             except ValueError:
                 limit = 20
             self._send_json(read_codex_sessions(limit))
+            return
+        if parsed.path == "/api/plan/projects":
+            query = urllib.parse.parse_qs(parsed.query)
+            try:
+                limit = max(1, min(MAX_PLAN_PROJECTS, int((query.get("limit") or ["30"])[0])))
+            except ValueError:
+                limit = 30
+            payload = read_plan_projects(limit)
+            status = 200 if payload.get("status") == "ok" else 500
+            self._send_json(payload, status=status)
             return
         if parsed.path == "/api/codex/session/messages":
             query = urllib.parse.parse_qs(parsed.query)

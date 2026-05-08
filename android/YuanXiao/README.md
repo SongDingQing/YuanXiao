@@ -17,6 +17,7 @@ Workflow nickname: `煮元宵` means run a YuanXiao-wide optimization pass, buil
 - Health URL in app: `${yuanxiao.relay.baseUrl}/health`
 - Inbox URL in app: `${yuanxiao.relay.baseUrl}/api/inbox`
 - Codex dashboard URL in app: `${yuanxiao.relay.baseUrl}/api/codex/sessions?limit=50`
+- Plan view URL in app: `${yuanxiao.relay.baseUrl}/api/plan/projects?limit=30`
 - Trust model: app bundles `app/src/main/res/raw/yuanxiao_ca.pem` and disables cleartext traffic.
 - Current route: APK -> ChangE HTTPS relay -> SSH reverse tunnel -> Mac mini YuanXiao bridge.
 - Current main ChangE conversation id: `yuanxiao-change-main`; the main chat page uses this stable conversation for ordinary Hermes/Codex route sends where possible.
@@ -33,8 +34,9 @@ Workflow nickname: `煮元宵` means run a YuanXiao-wide optimization pass, buil
 - Current long reply transport: ChangE sends chunked keep-alive headers/newlines for Hermes text, Codex text, and Codex vision, then returns the final JSON reply on the same request.
 - Current notification support: creates Android local notifications when a reply or ChangE downlink message arrives while the app process is alive; Android 13+ asks for `POST_NOTIFICATIONS` permission. v0.19 also shows an in-app top banner for incoming ChangE and Codex session replies so foreground messages still have a visible popup inside YuanXiao.
 - Current downlink support: v0.9 polls ChangE `/api/inbox`, renders主动下发 messages in the chat page, and triggers local notification.
-- Current Codex dashboard support: v0.10 adds a dashboard that polls `/api/codex/sessions` every 15 seconds while visible. v0.12 groups sessions into status sections and keeps archived sessions folded by default. v0.16 adds direct session chat entry buttons. v0.17 keeps those conversations separate from the main ChangE chat page. v0.21 adds `/api/codex/session/messages` for visible user/assistant history sync. v0.22 caches parsed session messages on the Mac mini bridge, uses file size/mtime/offset to read appended log tails only, and returns `scan_cost` so repeated polls can stay at `cache_hit`. v0.23 keeps the APK-side session history bounded and uses incremental view appends after the first render. v0.24 adds `last_message_preview` to the Mac mini bridge dashboard response and renders each agent row as name, recent message preview, and recent interaction time only. v0.28 prevents overlapping Dashboard and inbox polls when an earlier poll is still running. The polling paths read local Codex state/log files through the Mac mini bridge and do not call a Codex model.
-- Current UI support: redesigned v0.6 native UI with a status header, fixed-height text controls, separate search/chat/composer areas, and no default Android buttons that clip labels. v0.7 uses the Q-style Chang'e eating yuanxiao launcher icon. v0.8 moves search into the menu and a separate page. v0.10 makes the chat title `嫦娥`, changes the top-left control to `返回`, and shows the Chang'e icon only beside incoming ChangE messages. v0.18 folds the main chat bottom choices into an `选项` panel so the default composer stays compact. v0.20 keeps the package/project naming as YuanXiao while the installed launcher app name displays as `元宵`. v0.24 makes the Dashboard session list more compact and row-tap opens the dedicated session chat.
+- Current Codex dashboard support: v0.10 adds a dashboard that polls `/api/codex/sessions` every 15 seconds while visible. v0.12 groups sessions into status sections and keeps archived sessions folded by default. v0.16 adds direct session chat entry buttons. v0.17 keeps those conversations separate from the main ChangE chat page. v0.21 adds `/api/codex/session/messages` for visible user/assistant history sync. v0.22 caches parsed session messages on the Mac mini bridge, uses file size/mtime/offset to read appended log tails only, and returns `scan_cost` so repeated polls can stay at `cache_hit`. v0.23 keeps the APK-side session history bounded and uses incremental view appends after the first render. v0.24 adds `last_message_preview` to the Mac mini bridge dashboard response and renders each agent row as name, recent message preview, and recent interaction time only. v0.28 prevents overlapping Dashboard and inbox polls when an earlier poll is still running. v0.29 moves the Codex dashboard into the bottom `Codex` tab. The polling paths read local Codex state/log files through the Mac mini bridge and do not call a Codex model.
+- Current plan view support: v0.29 adds a bottom `计划` tab backed by `/api/plan/projects`, plus `bridge/yuanxiao-hermes-bridge/yuanxiao_agent_scheduler.py` for asynchronous project/CEO/agent status updates. The plan endpoint reads a local JSON state file and does not call a model.
+- Current UI support: redesigned v0.6 native UI with a status header, fixed-height text controls, separate search/chat/composer areas, and no default Android buttons that clip labels. v0.7 uses the Q-style Chang'e eating yuanxiao launcher icon. v0.8 moves search into the menu and a separate page. v0.10 makes the chat title `嫦娥` and shows the Chang'e icon only beside incoming ChangE messages. v0.18 folds the main chat bottom choices into an `选项` panel so the default composer stays compact. v0.20 keeps the package/project naming as YuanXiao while the installed launcher app name displays as `元宵`. v0.24 makes the Dashboard session list more compact and row-tap opens the dedicated session chat. v0.29 makes `Hermes` / `Codex` / `计划` the top-level bottom tabs.
 - Current rich message support: v0.11 renders Markdown text, tables, clickable links, Markdown image references, image/file/link attachment cards, and a one-tap copy button on each chat bubble. v0.19 aligns Markdown table columns with stable per-column widths. v0.23 adds a bounded cache for small Markdown render results.
 - Current search support: in-memory chat history search with `查`/`上`/`下`/`清`, result count, jump-to-result, and highlighted bubbles.
 - Current log support: server/link/test/status logs are folded into the top-left `日志` button and no longer occupy the chat stream. v0.23 keeps only the latest 120 log lines and autoscrolls logs only while the log panel is visible.
@@ -54,7 +56,7 @@ Private values live in `local.properties`; use `local.properties.example` as the
 `assembleDebug` also copies the debug APK to:
 
 ```text
-<yuanxiao.apk.outputDir>/yuanxiao-0.28.apk
+<yuanxiao.apk.outputDir>/yuanxiao-0.29.apk
 ```
 
 ## Verification
@@ -62,7 +64,7 @@ Private values live in `local.properties`; use `local.properties.example` as the
 ```bash
 JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
   <android-sdk>/build-tools/<version>/apksigner verify --verbose \
-  <yuanxiao.apk.outputDir>/yuanxiao-0.28.apk
+  <yuanxiao.apk.outputDir>/yuanxiao-0.29.apk
 ```
 
 Server local verification through SSH works:
@@ -102,4 +104,4 @@ The latest Quark Netdisk folder `元宵` upload is:
 - 首页的 `元宵` 文件夹 / `yuanxiao-0.28.apk`
 - Future YuanXiao packages must be uploaded into this existing folder only.
 
-The latest local built APK is `<yuanxiao.apk.outputDir>/yuanxiao-0.28.apk`. The latest Quark delivery APK is `yuanxiao-0.28.apk`, uploaded to the existing home/root-level `元宵` folder on 2026-05-08 as part of the standard `煮元宵` workflow. YuanXiao v0.28 includes Dashboard/inbox poll in-flight guards, bridge structured request-log trimming, and the long Codex session timeout fixes from v0.27.
+The latest local build from this source line is `<yuanxiao.apk.outputDir>/yuanxiao-0.29.apk`. The latest Quark delivery APK remains `yuanxiao-0.28.apk` until the next `煮元宵` workflow uploads a new package. YuanXiao v0.29 includes bottom Hermes/Codex/Plan tabs and the plan-state endpoint/script foundation.

@@ -1,6 +1,6 @@
 # YuanXiao Server
 
-HTTPS relay for the YuanXiao Android APK. Current mode supports text payloads with Hermes/Codex target routing, `嫦娥识图` image payloads, ChangE-to-APK downlink messages, rich downlink attachments, and a read-only Codex session dashboard.
+HTTPS relay for the YuanXiao Android APK. Current mode supports text payloads with Hermes/Codex target routing, `嫦娥识图` image payloads, ChangE-to-APK downlink messages, rich downlink attachments, a read-only Codex session dashboard, and a read-only Plan view.
 
 Route:
 
@@ -23,6 +23,7 @@ Endpoints:
 - `GET /api/inbox?after=&limit=` for YuanXiao APK downlink polling.
 - `POST /api/inbox/admin` from localhost only, for Codex/ChangE to queue messages to the APK. Payloads may include `images`, `files`, `attachments`, or `links` arrays; the APK renders them as rich message attachments.
 - `GET /api/codex/sessions?limit=` forwards to the Mac mini bridge and returns the current Codex session list from local state. This is file/database scanning, not a Codex model call.
+- `GET /api/plan/projects?limit=` forwards to the Mac mini bridge and returns async project/CEO/agent status from local plan state. This is file scanning, not a model call.
 - `POST /api/chat` with JSON body `{"message":"...","target":"hermes"}` for daily Hermes replies.
 - `POST /api/chat` with JSON body `{"message":"...","target":"codex"}` for Codex professional replies.
 - `POST /api/chat` with image body:

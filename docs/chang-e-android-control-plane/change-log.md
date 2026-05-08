@@ -1,5 +1,12 @@
 # YuanXiao Change Log
 
+## 0.29
+
+- Reworked the top-level Android navigation into bottom Hermes, Codex, and Plan tabs.
+- Added a Plan tab that renders project, CEO, and agent status from a local plan-state API.
+- Added `/api/plan/projects` through the ChangE relay and Mac mini bridge.
+- Added `yuanxiao_agent_scheduler.py` as the first dedicated async plan-state helper.
+
 ## 0.28
 
 - Prevented overlapping Dashboard and inbox polling in the Android app.

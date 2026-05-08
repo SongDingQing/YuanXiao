@@ -217,8 +217,10 @@ public class MainActivity extends Activity {
     private TextView queueTabButton;
     private ScrollView scrollView;
     private LinearLayout messageList;
+    private TextView latestMessageButton;
     private ScrollView sessionScrollView;
     private LinearLayout sessionMessageList;
+    private TextView sessionLatestMessageButton;
     private TextView sessionTitle;
     private TextView sessionSubtitle;
     private TextView sessionRenameButton;
@@ -512,7 +514,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.33", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.34", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -602,6 +604,8 @@ public class MainActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT
         ));
+        scrollView.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) ->
+                updateLatestButtonVisibility(scrollView, latestMessageButton));
         LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
@@ -609,6 +613,9 @@ public class MainActivity extends Activity {
         );
         messageParams.topMargin = dp(4);
         root.addView(scrollView, messageParams);
+        latestMessageButton = makeLatestMessageButton();
+        latestMessageButton.setOnClickListener(view -> scrollToBottom(scrollView));
+        root.addView(makeLatestButtonRow(latestMessageButton), matchWrap());
 
         LinearLayout composer = new LinearLayout(this);
         composer.setOrientation(LinearLayout.VERTICAL);
@@ -826,6 +833,8 @@ public class MainActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT
         ));
+        sessionScrollView.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) ->
+                updateLatestButtonVisibility(sessionScrollView, sessionLatestMessageButton));
         LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
@@ -833,6 +842,9 @@ public class MainActivity extends Activity {
         );
         messageParams.topMargin = dp(10);
         root.addView(sessionScrollView, messageParams);
+        sessionLatestMessageButton = makeLatestMessageButton();
+        sessionLatestMessageButton.setOnClickListener(view -> scrollToBottom(sessionScrollView));
+        root.addView(makeLatestButtonRow(sessionLatestMessageButton), matchWrap());
 
         LinearLayout composer = new LinearLayout(this);
         composer.setOrientation(LinearLayout.VERTICAL);
@@ -2578,6 +2590,23 @@ public class MainActivity extends Activity {
         return chip;
     }
 
+    private TextView makeLatestMessageButton() {
+        TextView button = makeActionChip("↓ 最新", Color.rgb(231, 241, 255), Color.rgb(31, 96, 164));
+        button.setTextSize(12);
+        button.setVisibility(View.GONE);
+        return button;
+    }
+
+    private LinearLayout makeLatestButtonRow(TextView button) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.END);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(82), dp(34));
+        params.topMargin = dp(6);
+        params.rightMargin = dp(4);
+        row.addView(button, params);
+        return row;
+    }
+
     private TextView makeTinyButton(String text) {
         TextView button = new TextView(this);
         button.setText(text);
@@ -2621,6 +2650,8 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.34", "翻历史时新增回到最新箭头。"));
+        v0.entries.add(new ReleaseEntry("0.34", "刷新聊天记录后自动到底部。"));
         v0.entries.add(new ReleaseEntry("0.33", "Codex 长请求改为后台任务回传。"));
         v0.entries.add(new ReleaseEntry("0.33", "测试计划创建后会完成进度。"));
         v0.entries.add(new ReleaseEntry("0.32", "计划页可直接新建测试 Agent。"));
@@ -3157,12 +3188,14 @@ public class MainActivity extends Activity {
         if (selectedCodexSessionId.isEmpty()) {
             TextView empty = makeSessionEmptyState("未选择 Codex session");
             sessionMessageList.addView(empty, matchWrap());
+            scrollToBottom(sessionScrollView);
             return;
         }
         List<SessionChatMessage> history = sessionChatHistories.get(selectedCodexSessionId);
         if (history == null || history.isEmpty()) {
             TextView empty = makeSessionEmptyState("暂无本地记录，正在同步 Mac mini 历史...");
             sessionMessageList.addView(empty, matchWrap());
+            scrollToBottom(sessionScrollView);
             return;
         }
         for (SessionChatMessage item : history) {
@@ -4652,7 +4685,43 @@ public class MainActivity extends Activity {
     }
 
     private void scrollToBottom(ScrollView targetScrollView) {
-        targetScrollView.post(() -> targetScrollView.fullScroll(View.FOCUS_DOWN));
+        if (targetScrollView == null) {
+            return;
+        }
+        targetScrollView.post(() -> {
+            targetScrollView.fullScroll(View.FOCUS_DOWN);
+            updateLatestButtonVisibility(targetScrollView);
+        });
+    }
+
+    private void updateLatestButtonVisibility(ScrollView targetScrollView) {
+        if (targetScrollView == scrollView) {
+            updateLatestButtonVisibility(targetScrollView, latestMessageButton);
+            return;
+        }
+        if (targetScrollView == sessionScrollView) {
+            updateLatestButtonVisibility(targetScrollView, sessionLatestMessageButton);
+        }
+    }
+
+    private void updateLatestButtonVisibility(ScrollView targetScrollView, TextView button) {
+        if (targetScrollView == null || button == null) {
+            return;
+        }
+        boolean show = !isNearScrollBottom(targetScrollView);
+        int targetVisibility = show ? View.VISIBLE : View.GONE;
+        if (button.getVisibility() != targetVisibility) {
+            button.setVisibility(targetVisibility);
+        }
+    }
+
+    private boolean isNearScrollBottom(ScrollView targetScrollView) {
+        if (targetScrollView == null || targetScrollView.getChildCount() == 0) {
+            return true;
+        }
+        View child = targetScrollView.getChildAt(0);
+        int distance = child.getBottom() - (targetScrollView.getHeight() + targetScrollView.getScrollY());
+        return distance <= dp(56);
     }
 
     private String stamp() {

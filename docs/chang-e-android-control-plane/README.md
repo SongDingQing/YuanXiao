@@ -19,13 +19,13 @@ Use the example config files as templates.
 
 ## Current Version
 
-- App version: `0.33`
-- Delivery APK name: `yuanxiao-0.33.apk`
+- App version: `0.34`
+- Local build APK name: `yuanxiao-0.34.apk`
 - Latest Quark delivery APK: `yuanxiao-0.33.apk`
 - Installed Android label: `元宵`
 - Latest major behavior: bottom Hermes/Codex/Plan tabs, compact Codex session
   rows, persistent main ChangE chat, Codex session chat/history sync, Codex
   session create/rename, duplicate-poll guards, plan-state API foundation,
   cached plan-state reads, handoff queue sync, queued-task reordering, and
-  Plan-tab Agent creation, async Codex/image replies, and smoke-test Plan
-  progress completion.
+  Plan-tab Agent creation, async Codex/image replies, smoke-test Plan progress
+  completion, and chat "jump to latest" controls.

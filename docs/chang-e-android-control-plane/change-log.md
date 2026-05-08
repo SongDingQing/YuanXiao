@@ -1,5 +1,12 @@
 # YuanXiao Change Log
 
+## 0.34
+
+- Added a `↓ 最新` button above the main chat composer while browsing older messages.
+- Added the same `↓ 最新` button above the dedicated Codex-session composer.
+- Chat history re-render and session refresh now scroll back to the latest record.
+- Built and signature-verified local `yuanxiao-0.34.apk`; SHA256 `a726152e00f40a5bcdc5ff8676d9f67f707f61288ca3fdcefa7a56de16fee80d`; Quark latest remains v0.33 until the next `煮元宵`.
+
 ## 0.33
 
 - Changed Codex, Codex-session, and image chat requests to async relay mode by default.

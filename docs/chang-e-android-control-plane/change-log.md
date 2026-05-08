@@ -4,7 +4,7 @@
 
 - Replaced the font-dependent copy glyph with a self-drawn two-card copy icon.
 - Keeps the copy action outside the bubble while making the icon visible on Huawei/Android fonts.
-- Built and signature-verified local `yuanxiao-0.35.apk`; SHA256 `e6daa20cd6622fb5296c3ab2614ae252ba4d9cd485dd164dc596f2855d201567`; Quark latest remains v0.33 until the next `煮元宵`.
+- Built, signature-verified, smoke-tested, and uploaded `yuanxiao-0.35.apk` to the existing Quark `元宵` folder; SHA256 `e6daa20cd6622fb5296c3ab2614ae252ba4d9cd485dd164dc596f2855d201567`.
 
 ## 0.34
 

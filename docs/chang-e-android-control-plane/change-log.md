@@ -1,5 +1,12 @@
 # YuanXiao Change Log
 
+## 0.38
+
+- Optimized the session-scoped request queue polling path for `煮元宵`.
+- Removed obsolete global Queue-page Android code now that queues live inside session chats.
+- Avoids rebuilding the session queue UI when the scoped queue state has not changed.
+- Built, signature-verified, smoke-tested, and uploaded `yuanxiao-0.38.apk` to the existing Quark `元宵` folder; SHA256 `5e816443a13b8f693fa5dcb1e7141db8d1c2110cf9239fdb6acfa98f565a2f7f`.
+
 ## 0.37
 
 - Removed the top-level Queue tab from the bottom navigation.

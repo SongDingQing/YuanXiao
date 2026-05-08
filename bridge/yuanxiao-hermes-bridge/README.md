@@ -38,6 +38,7 @@ Current support:
 - returned `files` array parsed from Markdown/raw file links in the reply, so YuanXiao can render file cards.
 - read-only Codex session status at `GET /api/codex/sessions?limit=`, backed by the local Codex state database configured through environment variables. This does not call a Codex model and is safe for continuous dashboard polling.
 - read-only Plan tab state at `GET /api/plan/projects?limit=`, backed by `YUANXIAO_PLAN_STATE_FILE`, with cache hits when the state file is unchanged.
+- Plan-tab Agent creation at `POST /api/plan/agent/create`, backed by `YUANXIAO_PLAN_STATE_FILE`, with no model call.
 - handoff Queue tab state at `GET /api/queue/tasks?limit=`, backed by the local Hermes/Codex handoff queue directory, plus queued-only ordering updates at `POST /api/queue/reorder`.
 
 The companion `yuanxiao_agent_scheduler.py` script updates the local plan-state
@@ -68,6 +69,10 @@ curl --cacert android/YuanXiao/app/src/main/res/raw/yuanxiao_ca.pem \
   'https://<relay-host>/api/codex/sessions?limit=5'
 curl --cacert android/YuanXiao/app/src/main/res/raw/yuanxiao_ca.pem \
   'https://<relay-host>/api/plan/projects?limit=5'
+curl --cacert android/YuanXiao/app/src/main/res/raw/yuanxiao_ca.pem \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"测试 Agent"}' \
+  'https://<relay-host>/api/plan/agent/create'
 curl --cacert android/YuanXiao/app/src/main/res/raw/yuanxiao_ca.pem \
   'https://<relay-host>/api/queue/tasks?limit=5'
 ```

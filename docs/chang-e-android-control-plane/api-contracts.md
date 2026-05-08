@@ -129,6 +129,43 @@ Response shape:
 When the plan state file has not changed, the bridge may return
 `"scan_cost": "cache_hit"`.
 
+`POST /api/plan/agent/create`
+
+Creates a local Plan-tab Agent in `YUANXIAO_PLAN_STATE_FILE`. If `project_id`
+is omitted and no project exists yet, the bridge creates a local test plan first.
+This does not call a model.
+
+Request shape:
+
+```json
+{
+  "project_id": "optional-plan-id",
+  "project_title": "元宵测试计划",
+  "name": "测试 Agent",
+  "role": "Agent",
+  "current_task": "等待主人分配任务。",
+  "status": "queued"
+}
+```
+
+Response shape:
+
+```json
+{
+  "status": "ok",
+  "capability": "plan-agent-create",
+  "quota_cost": "none_file_update_only",
+  "created_project": false,
+  "project_id": "plan-id",
+  "agent": {
+    "id": "agent-id",
+    "name": "测试 Agent",
+    "status": "queued",
+    "progress": 0
+  }
+}
+```
+
 ## Queue View
 
 `GET /api/queue/tasks?limit=`

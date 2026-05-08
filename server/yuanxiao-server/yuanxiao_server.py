@@ -203,6 +203,7 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
                     "codex_session_create": True,
                     "codex_session_rename": True,
                     "plan_view": True,
+                    "plan_agent_create": True,
                     "task_queue": True,
                     "queue_reorder": "queued_only",
                     "bridge_timeout_seconds": HERMES_BRIDGE_TIMEOUT_SECONDS,
@@ -326,7 +327,12 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             self._send_json({"status": "ok", "message": message, "server": "change", "time": now_iso()})
             return
 
-        if parsed.path in {"/api/codex/session/create", "/api/codex/session/rename", "/api/queue/reorder"}:
+        if parsed.path in {
+            "/api/codex/session/create",
+            "/api/codex/session/rename",
+            "/api/plan/agent/create",
+            "/api/queue/reorder",
+        }:
             try:
                 payload = self._read_json_payload()
             except ValueError as exc:

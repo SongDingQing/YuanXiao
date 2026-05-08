@@ -1,5 +1,12 @@
 # YuanXiao Change Log
 
+## 0.32
+
+- Added Plan-tab Agent creation from the Android app.
+- Added `/api/plan/agent/create` through ChangE and the Mac mini bridge.
+- Auto-creates a local test plan when the Plan tab has no project yet.
+- Bumped the delivery APK version to `yuanxiao-0.32.apk`.
+
 ## 0.31
 
 - Added a bottom Queue tab for Hermes/Codex handoff queue sync.

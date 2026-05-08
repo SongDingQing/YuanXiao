@@ -1,6 +1,6 @@
 # YuanXiao Server
 
-HTTPS relay for the YuanXiao Android APK. Current mode supports text payloads with Hermes/Codex target routing, `嫦娥识图` image payloads, ChangE-to-APK downlink messages, rich downlink attachments, a read-only Codex session dashboard, a read-only Plan view, and a queued-only handoff queue control path.
+HTTPS relay for the YuanXiao Android APK. Current mode supports text payloads with Hermes/Codex target routing, `嫦娥识图` image payloads, ChangE-to-APK downlink messages, rich downlink attachments, a read-only Codex session dashboard, Plan view reads and Agent creation, and a queued-only handoff queue control path.
 
 Route:
 
@@ -24,6 +24,7 @@ Endpoints:
 - `POST /api/inbox/admin` from localhost only, for Codex/ChangE to queue messages to the APK. Payloads may include `images`, `files`, `attachments`, or `links` arrays; the APK renders them as rich message attachments.
 - `GET /api/codex/sessions?limit=` forwards to the Mac mini bridge and returns the current Codex session list from local state. This is file/database scanning, not a Codex model call.
 - `GET /api/plan/projects?limit=` forwards to the Mac mini bridge and returns async project/CEO/agent status from local plan state. This is file scanning, not a model call.
+- `POST /api/plan/agent/create` forwards to the Mac mini bridge and writes a new Agent into local plan state. This is file updating, not a model call.
 - `GET /api/queue/tasks?limit=` forwards to the Mac mini bridge and returns Hermes/Codex handoff queue state from local queue files. This is file scanning, not a model call.
 - `POST /api/queue/reorder` forwards queued-task ordering changes to the Mac mini bridge. Running tasks are not interrupted.
 - `POST /api/chat` with JSON body `{"message":"...","target":"hermes"}` for daily Hermes replies.

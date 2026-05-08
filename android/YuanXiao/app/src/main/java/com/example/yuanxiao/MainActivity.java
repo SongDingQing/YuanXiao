@@ -77,6 +77,7 @@ public class MainActivity extends Activity {
     private static final String CODEX_SESSION_CREATE_URL = endpoint("/api/codex/session/create");
     private static final String CODEX_SESSION_RENAME_URL = endpoint("/api/codex/session/rename");
     private static final String PLAN_PROJECTS_URL = endpoint("/api/plan/projects?limit=30");
+    private static final String PLAN_AGENT_CREATE_URL = endpoint("/api/plan/agent/create");
     private static final String QUEUE_TASKS_URL = endpoint("/api/queue/tasks?limit=30");
     private static final String QUEUE_REORDER_URL = endpoint("/api/queue/reorder");
     private static final String NOTIFICATION_CHANNEL_ID = "yuanxiao_messages";
@@ -209,6 +210,7 @@ public class MainActivity extends Activity {
     private TextView queueSummary;
     private TextView queueUpdated;
     private TextView queueGuideButton;
+    private TextView planCreateAgentButton;
     private TextView hermesTabButton;
     private TextView codexTabButton;
     private TextView planTabButton;
@@ -276,6 +278,7 @@ public class MainActivity extends Activity {
     private volatile boolean dashboardSyncInFlight = false;
     private volatile boolean sessionSyncInFlight = false;
     private volatile boolean planSyncInFlight = false;
+    private volatile boolean planCreateAgentInFlight = false;
     private volatile boolean queueSyncInFlight = false;
     private volatile boolean queueReorderInFlight = false;
     private volatile boolean sessionSendInFlight = false;
@@ -284,6 +287,7 @@ public class MainActivity extends Activity {
     private String selectedCodexSessionId = "";
     private String selectedCodexSessionTitle = "";
     private JSONObject lastDashboardResponse;
+    private final List<String> lastPlanProjectIds = new ArrayList<>();
     private final List<String> lastQueueOrderIds = new ArrayList<>();
     private final List<ReleaseGroup> releaseGroups = new ArrayList<>();
     private final List<ChatRecord> chatRecords = new ArrayList<>();
@@ -508,7 +512,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.31", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.32", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -966,6 +970,13 @@ public class MainActivity extends Activity {
         subtitle.setTextColor(Color.rgb(91, 101, 116));
         titleBlock.addView(subtitle);
         top.addView(titleBlock, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        planCreateAgentButton = makeActionChip("Agent", Color.rgb(231, 241, 255), Color.rgb(31, 96, 164));
+        planCreateAgentButton.setTextSize(12);
+        planCreateAgentButton.setOnClickListener(view -> showCreatePlanAgentDialog());
+        LinearLayout.LayoutParams createAgentParams = new LinearLayout.LayoutParams(dp(70), dp(38));
+        createAgentParams.rightMargin = dp(8);
+        top.addView(planCreateAgentButton, createAgentParams);
 
         TextView refreshButton = makeActionChip("刷新", Color.rgb(239, 246, 239), Color.rgb(50, 114, 62));
         refreshButton.setTextSize(12);
@@ -1498,6 +1509,60 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void showCreatePlanAgentDialog() {
+        EditText nameInput = makeSessionTitleInput("测试 Agent");
+        nameInput.setText("测试 Agent");
+        nameInput.selectAll();
+        new AlertDialog.Builder(this)
+                .setTitle("新建 Agent")
+                .setView(nameInput)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("创建", (dialog, which) -> createPlanAgent(nameInput.getText().toString()))
+                .show();
+    }
+
+    private String sanitizePlanAgentName(String rawName) {
+        String name = rawName == null ? "" : rawName.trim().replaceAll("\\s+", " ");
+        if (name.isEmpty()) {
+            name = "测试 Agent";
+        }
+        if (name.length() > 60) {
+            name = name.substring(0, 60).trim();
+        }
+        return name.isEmpty() ? "测试 Agent" : name;
+    }
+
+    private void createPlanAgent(String rawName) {
+        String name = sanitizePlanAgentName(rawName);
+        setPlanCreateAgentBusy(true);
+        appendLog("正在创建计划 Agent：" + name);
+        executor.execute(() -> {
+            try {
+                JSONObject request = new JSONObject();
+                if (!lastPlanProjectIds.isEmpty()) {
+                    request.put("project_id", lastPlanProjectIds.get(0));
+                }
+                request.put("project_title", "元宵测试计划");
+                request.put("name", name);
+                request.put("role", "Agent");
+                request.put("current_task", "等待主人分配任务。");
+                request.put("status", "queued");
+                JSONObject response = postJson(PLAN_AGENT_CREATE_URL, request);
+                if (!"ok".equals(response.optString("status"))) {
+                    throw new IllegalStateException(response.optString("error", "plan_agent_create_failed"));
+                }
+                runOnUiThread(() -> {
+                    setPlanCreateAgentBusy(false);
+                    pollPlanView();
+                    appendLog("计划 Agent 已创建：" + name);
+                });
+            } catch (Exception exception) {
+                runOnUiThread(() -> setPlanCreateAgentBusy(false));
+                appendLogFromWorker("创建计划 Agent 失败：" + exception.getMessage());
+            }
+        });
+    }
+
     private void showCreateCodexSessionDialog() {
         EditText titleInput = makeSessionTitleInput("元宵新会话");
         titleInput.setText("元宵新会话");
@@ -1623,6 +1688,16 @@ public class MainActivity extends Activity {
         }
         dashboardCreateButton.setEnabled(!busy);
         dashboardCreateButton.setText(busy ? "等待" : "新建");
+    }
+
+    private void setPlanCreateAgentBusy(boolean busy) {
+        if (planCreateAgentButton == null) {
+            return;
+        }
+        planCreateAgentInFlight = busy;
+        planCreateAgentButton.setEnabled(!busy);
+        planCreateAgentButton.setAlpha(busy ? 0.55f : 1f);
+        planCreateAgentButton.setText(busy ? "等待" : "Agent");
     }
 
     private void setSessionRenameBusy(boolean busy) {
@@ -1814,6 +1889,7 @@ public class MainActivity extends Activity {
             return;
         }
         planProjectList.removeAllViews();
+        lastPlanProjectIds.clear();
         JSONArray projects = response.optJSONArray("projects");
         if (projects == null || projects.length() == 0) {
             TextView empty = new TextView(this);
@@ -1829,6 +1905,10 @@ public class MainActivity extends Activity {
             JSONObject project = projects.optJSONObject(i);
             if (project == null) {
                 continue;
+            }
+            String projectId = project.optString("id", "").trim();
+            if (!projectId.isEmpty()) {
+                lastPlanProjectIds.add(projectId);
             }
             LinearLayout.LayoutParams params = sessionRowParams();
             planProjectList.addView(makePlanProjectCard(project), params);
@@ -2537,6 +2617,8 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.32", "计划页可直接新建测试 Agent。"));
+        v0.entries.add(new ReleaseEntry("0.32", "无计划时会自动创建测试计划。"));
         v0.entries.add(new ReleaseEntry("0.31", "新增 handoff 队列同步页面。"));
         v0.entries.add(new ReleaseEntry("0.31", "等待队列任务支持上移下移排序。"));
         v0.entries.add(new ReleaseEntry("0.31", "队列页面增加折叠引导说明。"));

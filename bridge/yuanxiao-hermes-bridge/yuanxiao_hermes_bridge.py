@@ -81,6 +81,7 @@ PLAN_STATE_FILE = Path(os.environ.get("YUANXIAO_PLAN_STATE_FILE", str(Path.home(
 MAX_PLAN_PROJECTS = int(os.environ.get("YUANXIAO_MAX_PLAN_PROJECTS", "50"))
 PLAN_STATE_CACHE: dict[str, Any] = {}
 PLAN_STATE_CACHE_LOCK = threading.Lock()
+PLAN_STATE_LOCK = threading.Lock()
 CODEX_HANDOFF_QUEUE_DIR = Path(
     os.environ.get("YUANXIAO_CODEX_HANDOFF_QUEUE_DIR", str(Path.home() / ".hermes/codex-handoff/queue"))
 )
@@ -128,6 +129,10 @@ def compact_preview_text(text: str, limit: int = MAX_CODEX_SESSION_PREVIEW_CHARS
 
 
 def compact_queue_text(text: str, limit: int = 160) -> str:
+    return compact_preview_text(str(text or ""), limit)
+
+
+def bounded_plan_text(text: Any, limit: int = 240) -> str:
     return compact_preview_text(str(text or ""), limit)
 
 
@@ -259,6 +264,144 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
             PLAN_STATE_CACHE["key"] = cache_key
             PLAN_STATE_CACHE["payload"] = payload
     return payload
+
+
+def load_plan_state_for_write() -> dict[str, Any]:
+    if not PLAN_STATE_FILE.exists():
+        return {"schema_version": 1, "updated_at": now_iso(), "projects": [], "events": []}
+    try:
+        data = json.loads(PLAN_STATE_FILE.read_text(encoding="utf-8") or "{}")
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    if not isinstance(data.get("projects"), list):
+        data["projects"] = []
+    if not isinstance(data.get("events"), list):
+        data["events"] = []
+    data.setdefault("schema_version", 1)
+    data.setdefault("updated_at", now_iso())
+    return data
+
+
+def save_plan_state(state: dict[str, Any]) -> None:
+    state["updated_at"] = now_iso()
+    PLAN_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = PLAN_STATE_FILE.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp_path.replace(PLAN_STATE_FILE)
+    with PLAN_STATE_CACHE_LOCK:
+        PLAN_STATE_CACHE.clear()
+
+
+def append_plan_event(state: dict[str, Any], event: str, **fields: Any) -> None:
+    events = state.setdefault("events", [])
+    if not isinstance(events, list):
+        events = []
+        state["events"] = events
+    events.append({"id": uuid.uuid4().hex[:12], "event": event, "time": now_iso(), **fields})
+    del events[:-200]
+
+
+def default_plan_project(title: str = "元宵测试计划") -> dict[str, Any]:
+    return {
+        "id": f"plan-{uuid.uuid4().hex[:8]}",
+        "title": bounded_plan_text(title or "元宵测试计划", 80),
+        "status": "running",
+        "progress": 0,
+        "last_report": "等待 Agent 汇报。",
+        "updated_at": now_iso(),
+        "ceo": {
+            "id": f"ceo-{uuid.uuid4().hex[:8]}",
+            "name": "CEO",
+            "role": "CEO",
+            "session_id": "",
+            "status": "queued",
+            "progress": 0,
+            "last_report": "",
+            "updated_at": now_iso(),
+        },
+        "agents": [],
+    }
+
+
+def find_writable_plan_project(state: dict[str, Any], project_id: str = "", project_title: str = "") -> tuple[dict[str, Any], bool]:
+    projects = state.setdefault("projects", [])
+    if not isinstance(projects, list):
+        projects = []
+        state["projects"] = projects
+    wanted = str(project_id or "").strip()
+    if wanted:
+        for project in projects:
+            if isinstance(project, dict) and str(project.get("id") or "") == wanted:
+                return project, False
+        raise LookupError("plan_project_not_found")
+    for project in projects:
+        if isinstance(project, dict):
+            return project, False
+    project = default_plan_project(project_title)
+    projects.insert(0, project)
+    append_plan_event(state, "project_created_by_yuanxiao", project_id=project["id"], title=project["title"])
+    return project, True
+
+
+def create_plan_agent(payload: dict[str, Any]) -> dict[str, Any]:
+    name = bounded_plan_text(payload.get("name") or payload.get("title") or "测试 Agent", 80)
+    if not name:
+        name = "测试 Agent"
+    role = bounded_plan_text(payload.get("role") or "Agent", 60)
+    current_task = bounded_plan_text(payload.get("current_task") or payload.get("task") or "等待分配任务。", 180)
+    session_id = str(payload.get("session_id") or "").strip()
+    status = str(payload.get("status") or "queued").strip().lower() or "queued"
+    if status not in {"queued", "running", "active", "waiting", "blocked", "review", "done", "completed"}:
+        status = "queued"
+    with PLAN_STATE_LOCK:
+        state = load_plan_state_for_write()
+        project, created_project = find_writable_plan_project(
+            state,
+            str(payload.get("project_id") or "").strip(),
+            str(payload.get("project_title") or "").strip(),
+        )
+        agents = project.setdefault("agents", [])
+        if not isinstance(agents, list):
+            agents = []
+            project["agents"] = agents
+        agent = {
+            "id": str(payload.get("agent_id") or f"agent-{uuid.uuid4().hex[:8]}"),
+            "name": name,
+            "role": role,
+            "session_id": session_id,
+            "status": status,
+            "progress": normalized_progress(payload.get("progress", 0)),
+            "current_task": current_task,
+            "last_report": bounded_plan_text(payload.get("last_report") or "新 Agent 已创建。", 180),
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+        }
+        agents.insert(0, agent)
+        project["updated_at"] = now_iso()
+        if str(project.get("status") or "queued").lower() == "queued":
+            project["status"] = "running"
+        project["last_report"] = bounded_plan_text(f"{name} 已加入计划。", 180)
+        append_plan_event(
+            state,
+            "agent_created_by_yuanxiao",
+            project_id=str(project.get("id") or ""),
+            agent_id=agent["id"],
+            name=name,
+        )
+        save_plan_state(state)
+    return {
+        "status": "ok",
+        "source": "plan-state-file",
+        "capability": "plan-agent-create",
+        "quota_cost": "none_file_update_only",
+        "created_project": created_project,
+        "project_id": str(project.get("id") or ""),
+        "project_title": str(project.get("title") or ""),
+        "agent": normalize_plan_person(agent, name),
+        "time": now_iso(),
+    }
 
 
 def queue_item_path(queue_id: str) -> Path:
@@ -1712,6 +1855,7 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                     "codex_session_create": True,
                     "codex_session_rename": True,
                     "plan_view": True,
+                    "plan_agent_create": True,
                     "task_queue": True,
                     "queue_reorder": "queued_only",
                     "image_input": "enabled",
@@ -1773,6 +1917,7 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             "/api/chat",
             "/api/codex/session/create",
             "/api/codex/session/rename",
+            "/api/plan/agent/create",
             "/api/queue/reorder",
         }:
             self._send_json({"error": "not_found"}, status=404)
@@ -1795,6 +1940,26 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             payload = json.loads(raw or "{}")
         except Exception:
             self._send_json({"error": "invalid_json"}, status=400)
+            return
+
+        if parsed.path == "/api/plan/agent/create":
+            try:
+                response = create_plan_agent(payload)
+            except LookupError as exc:
+                self._send_json({"status": "error", "error": str(exc), "time": now_iso()}, status=404)
+                return
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "plan_agent_create_failed",
+                        "detail": str(exc),
+                        "time": now_iso(),
+                    },
+                    status=500,
+                )
+                return
+            self._send_json(response)
             return
 
         if parsed.path == "/api/queue/reorder":

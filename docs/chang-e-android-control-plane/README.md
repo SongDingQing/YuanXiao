@@ -19,8 +19,8 @@ Use the example config files as templates.
 
 ## Current Version
 
-- App version: `0.38`
-- Local build APK name: `yuanxiao-0.38.apk`
+- App version: `0.39`
+- Local build APK name: `yuanxiao-0.39.apk`
 - Latest Quark delivery APK: `yuanxiao-0.38.apk`
 - Installed Android label: `元宵`
 - Latest major behavior: bottom Hermes/Codex/Plan tabs, compact Codex session
@@ -30,5 +30,5 @@ Use the example config files as templates.
   Plan-tab Agent creation, async Codex/image replies, smoke-test Plan progress
   completion, chat "jump to latest" controls, self-drawn copy icons, and a
   multi-plan CEO orchestration view with ChangE-managed reporting,
-  session-scoped request queues inside each Codex session chat, and optimized
-  session-queue polling/rendering.
+  session-scoped request queues inside each Codex session chat, optimized
+  session-queue polling/rendering, and direct CEO chat entry from each plan.

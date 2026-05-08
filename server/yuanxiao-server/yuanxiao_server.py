@@ -244,6 +244,7 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
                     "plan_agent_create": True,
                     "plan_project_create": True,
                     "plan_ceo_request": True,
+                    "plan_ceo_session": True,
                     "plan_reporting_policy": "change_only",
                     "task_queue": True,
                     "task_queue_scope": "session_chat",
@@ -376,6 +377,7 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             "/api/plan/agent/create",
             "/api/plan/project/create",
             "/api/plan/ceo/request",
+            "/api/plan/ceo/session",
             "/api/queue/reorder",
         }:
             try:

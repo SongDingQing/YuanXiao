@@ -111,4 +111,4 @@ The latest Quark Netdisk folder `元宵` upload is:
 - 首页的 `元宵` 文件夹 / `yuanxiao-0.38.apk`
 - Future YuanXiao packages must be uploaded into this existing folder only.
 
-The latest local build and Quark delivery APK are `<yuanxiao.apk.outputDir>/yuanxiao-0.38.apk` / `yuanxiao-0.38.apk`, uploaded to the existing home/root-level `元宵` folder on 2026-05-08 as part of the standard `煮元宵` workflow. YuanXiao v0.38 keeps request queues inside the specific Codex session chat page and optimizes repeated session-queue rendering.
+The latest source-line local build is `<yuanxiao.apk.outputDir>/yuanxiao-0.39.apk`; the latest Quark delivery APK remains `yuanxiao-0.38.apk`, uploaded to the existing home/root-level `元宵` folder on 2026-05-08 as part of the standard `煮元宵` workflow. YuanXiao v0.39 lets the Plan view open a dedicated CEO chat and lazily bind a CEO Codex session when needed.

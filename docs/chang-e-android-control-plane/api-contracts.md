@@ -188,6 +188,45 @@ Request shape:
 }
 ```
 
+`POST /api/plan/ceo/session`
+
+Ensures a plan CEO has a dedicated Codex session and returns the session record
+that YuanXiao should open. If the CEO already has a valid session, this is a
+database lookup only. If no valid session exists, the bridge creates and binds a
+new Codex session for that CEO.
+
+Request shape:
+
+```json
+{
+  "project_id": "plan-id"
+}
+```
+
+Response shape:
+
+```json
+{
+  "status": "ok",
+  "capability": "plan-ceo-session",
+  "quota_cost": "none_db_lookup_only",
+  "project_id": "plan-id",
+  "ceo": {
+    "id": "ceo-id",
+    "name": "CEO",
+    "role": "CEO",
+    "session_id": "codex-session-id"
+  },
+  "session": {
+    "id": "codex-session-id",
+    "title": "CEO · Project title · CEO"
+  }
+}
+```
+
+When a new session must be created, `quota_cost` is
+`codex_model_init_call`.
+
 `POST /api/plan/agent/create`
 
 Legacy local state helper for adding an execution role in `YUANXIAO_PLAN_STATE_FILE`. If `project_id`

@@ -612,6 +612,71 @@ def submit_plan_ceo_request(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def ensure_plan_ceo_session(payload: dict[str, Any]) -> dict[str, Any]:
+    project_id = str(payload.get("project_id") or "").strip()
+    if not project_id:
+        raise ValueError("missing_project_id")
+    now = now_iso()
+    with PLAN_STATE_LOCK:
+        state = load_plan_state_for_write()
+        project, _ = find_writable_plan_project(state, project_id, "")
+        ceo = project.setdefault("ceo", {})
+        if not isinstance(ceo, dict):
+            ceo = {}
+            project["ceo"] = ceo
+        ceo.setdefault("id", f"ceo-{uuid.uuid4().hex[:8]}")
+        ceo.setdefault("name", "计划 CEO")
+        ceo["role"] = "CEO"
+        ceo_name = str(ceo.get("name") or "计划 CEO").strip() or "计划 CEO"
+        project_title = str(project.get("title") or "新计划").strip() or "新计划"
+        session_id = str(ceo.get("session_id") or "").strip()
+        if session_id and session_id_exists(session_id):
+            record = codex_thread_record(session_id) or {"id": session_id, "title": ceo_name}
+            return {
+                "status": "ok",
+                "source": "plan-state-file",
+                "capability": "plan-ceo-session",
+                "quota_cost": "none_db_lookup_only",
+                "project_id": project_id,
+                "ceo": normalize_plan_person(ceo, "CEO"),
+                "session": record,
+                "time": now,
+            }
+
+    session_title = sanitize_codex_session_title(f"CEO · {project_title} · {ceo_name}")
+    record = create_user_codex_session(session_title)
+    session_id = str(record.get("id") or "").strip()
+    if not session_id:
+        raise RuntimeError("missing_ceo_session_id")
+    with PLAN_STATE_LOCK:
+        state = load_plan_state_for_write()
+        project, _ = find_writable_plan_project(state, project_id, "")
+        ceo = project.setdefault("ceo", {})
+        if not isinstance(ceo, dict):
+            ceo = {}
+            project["ceo"] = ceo
+        ceo.setdefault("id", f"ceo-{uuid.uuid4().hex[:8]}")
+        ceo.setdefault("name", ceo_name)
+        ceo["role"] = "CEO"
+        ceo["session_id"] = session_id
+        ceo["updated_at"] = now_iso()
+        if not str(ceo.get("last_report") or "").strip():
+            ceo["last_report"] = "CEO 聊天会话已建立，后续可直接对话。"
+        append_plan_event(state, "ceo_session_bound_by_yuanxiao", project_id=project_id, session_id=session_id)
+        save_plan_state(state)
+        normalized_ceo = normalize_plan_person(ceo, "CEO")
+    return {
+        "status": "ok",
+        "source": "codex-session-create",
+        "capability": "plan-ceo-session",
+        "quota_cost": "codex_model_init_call",
+        "project_id": project_id,
+        "ceo": normalized_ceo,
+        "session": record,
+        "time": now_iso(),
+    }
+
+
 def queue_item_path(queue_id: str) -> Path:
     safe = re.sub(r"[^a-zA-Z0-9_.-]", "_", str(queue_id or "").strip())
     return CODEX_HANDOFF_QUEUE_DIR / f"{safe}.json"
@@ -2120,6 +2185,7 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                     "plan_agent_create": True,
                     "plan_project_create": True,
                     "plan_ceo_request": True,
+                    "plan_ceo_session": True,
                     "plan_reporting_policy": "change_only",
                     "plan_smoke_test_complete": True,
                     "task_queue": True,
@@ -2189,6 +2255,7 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             "/api/plan/agent/create",
             "/api/plan/project/create",
             "/api/plan/ceo/request",
+            "/api/plan/ceo/session",
             "/api/queue/reorder",
         }:
             self._send_json({"error": "not_found"}, status=404)
@@ -2268,6 +2335,29 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                         "time": now_iso(),
                     },
                     status=500,
+                )
+                return
+            self._send_json(response)
+            return
+
+        if parsed.path == "/api/plan/ceo/session":
+            try:
+                response = ensure_plan_ceo_session(payload)
+            except ValueError as exc:
+                self._send_json({"status": "error", "error": str(exc), "time": now_iso()}, status=400)
+                return
+            except LookupError as exc:
+                self._send_json({"status": "error", "error": str(exc), "time": now_iso()}, status=404)
+                return
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "plan_ceo_session_failed",
+                        "detail": str(exc),
+                        "time": now_iso(),
+                    },
+                    status=504,
                 )
                 return
             self._send_json(response)

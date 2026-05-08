@@ -1,5 +1,13 @@
 # YuanXiao Change Log
 
+## 0.39
+
+- Plan CEO rows now open the dedicated CEO chat page from YuanXiao.
+- Added `/api/plan/ceo/session` so a CEO chat can be created and bound lazily.
+- Returning from a CEO chat opened from Plan goes back to the Plan tab.
+- Built and signature-verified local `yuanxiao-0.39.apk`; SHA256 `61b0db56f87b9b22c3a84c2cf6ef8c18fad7438051445ade5229c875abcccaf9`.
+- Deployed the bridge/server route and smoke-tested public forwarding with `upstream_status=400` for a missing `project_id`; latest Quark delivery remains `yuanxiao-0.38.apk` until the next `煮元宵`.
+
 ## 0.38
 
 - Optimized the session-scoped request queue polling path for `煮元宵`.

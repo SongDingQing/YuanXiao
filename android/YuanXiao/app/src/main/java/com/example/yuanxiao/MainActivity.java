@@ -82,6 +82,7 @@ public class MainActivity extends Activity {
     private static final String PLAN_PROJECTS_URL = endpoint("/api/plan/projects?limit=30");
     private static final String PLAN_PROJECT_CREATE_URL = endpoint("/api/plan/project/create");
     private static final String PLAN_CEO_REQUEST_URL = endpoint("/api/plan/ceo/request");
+    private static final String PLAN_CEO_SESSION_URL = endpoint("/api/plan/ceo/session");
     private static final String QUEUE_REORDER_URL = endpoint("/api/queue/reorder");
     private static final String NOTIFICATION_CHANNEL_ID = "yuanxiao_messages";
     private static final String PREFS_NAME = "yuanxiao_state";
@@ -279,6 +280,7 @@ public class MainActivity extends Activity {
     private volatile boolean sessionSyncInFlight = false;
     private volatile boolean planSyncInFlight = false;
     private volatile boolean planCreateAgentInFlight = false;
+    private volatile boolean planCeoSessionInFlight = false;
     private volatile boolean queueSyncInFlight = false;
     private volatile boolean queueReorderInFlight = false;
     private volatile boolean sessionSendInFlight = false;
@@ -287,6 +289,7 @@ public class MainActivity extends Activity {
     private String selectedCodexSessionId = "";
     private String selectedCodexSessionTitle = "";
     private String lastSessionQueueSignature = "";
+    private boolean sessionReturnToPlan = false;
     private JSONObject lastDashboardResponse;
     private final List<String> lastPlanProjectIds = new ArrayList<>();
     private final List<String> lastQueueOrderIds = new ArrayList<>();
@@ -353,7 +356,7 @@ public class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (sessionChatVisible) {
-            showDashboard();
+            returnFromSessionChat();
             return;
         }
         if (dashboardVisible || planVisible) {
@@ -503,7 +506,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.38", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.39", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -783,7 +786,7 @@ public class MainActivity extends Activity {
         header.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView backButton = makeActionChip("返回", Color.rgb(236, 243, 249), Color.rgb(38, 83, 111));
-        backButton.setOnClickListener(view -> showDashboard());
+        backButton.setOnClickListener(view -> returnFromSessionChat());
         header.addView(backButton, new LinearLayout.LayoutParams(dp(62), dp(42)));
 
         LinearLayout titleBlock = new LinearLayout(this);
@@ -1164,6 +1167,7 @@ public class MainActivity extends Activity {
         dashboardVisible = showCodex;
         planVisible = showPlan;
         sessionChatVisible = false;
+        sessionReturnToPlan = false;
         stopSessionChatPolling();
         if (dashboardView != null) {
             dashboardView.setVisibility(showCodex ? View.VISIBLE : View.GONE);
@@ -1194,6 +1198,15 @@ public class MainActivity extends Activity {
         }
         stopQueuePolling();
         updateBottomTabs();
+    }
+
+    private void returnFromSessionChat() {
+        if (sessionReturnToPlan) {
+            showPlan();
+        } else {
+            showDashboard();
+        }
+        sessionReturnToPlan = false;
     }
 
     private void showSessionChat() {
@@ -1595,6 +1608,57 @@ public class MainActivity extends Activity {
                 appendLogFromWorker("交给计划 CEO 失败：" + exception.getMessage());
             }
         });
+    }
+
+    private void openPlanCeoChat(String projectId, String projectTitle, JSONObject ceo) {
+        if (planCeoSessionInFlight) {
+            appendLog("CEO 会话正在建立，请稍等。");
+            return;
+        }
+        String sessionId = ceo.optString("session_id", "").trim();
+        if (!sessionId.isEmpty()) {
+            try {
+                JSONObject session = new JSONObject();
+                session.put("id", sessionId);
+                session.put("title", planCeoChatTitle(projectTitle, ceo));
+                openCodexSessionChat(session, true);
+            } catch (Exception exception) {
+                appendLog("CEO 会话打开失败：" + exception.getMessage());
+            }
+            return;
+        }
+        planCeoSessionInFlight = true;
+        appendLog("正在为 CEO 建立聊天：" + compactOneLine(projectTitle, 32));
+        executor.execute(() -> {
+            try {
+                JSONObject request = new JSONObject();
+                request.put("project_id", projectId);
+                JSONObject response = postJson(PLAN_CEO_SESSION_URL, request);
+                if (!"ok".equals(response.optString("status"))) {
+                    throw new IllegalStateException(response.optString("error", "plan_ceo_session_failed"));
+                }
+                JSONObject session = response.optJSONObject("session");
+                if (session == null || session.optString("id", "").trim().isEmpty()) {
+                    throw new IllegalStateException("missing_ceo_session");
+                }
+                runOnUiThread(() -> {
+                    planCeoSessionInFlight = false;
+                    openCodexSessionChat(session, true);
+                    pollPlanView();
+                    appendLog("已进入 CEO 聊天：" + compactSessionTitle(selectedCodexSessionTitle));
+                });
+            } catch (Exception exception) {
+                runOnUiThread(() -> planCeoSessionInFlight = false);
+                appendLogFromWorker("进入 CEO 聊天失败：" + exception.getMessage());
+            }
+        });
+    }
+
+    private String planCeoChatTitle(String projectTitle, JSONObject ceo) {
+        String ceoName = planPersonName(ceo);
+        String fallback = "CEO · " + compactOneLine(projectTitle, 36) + " · " + ceoName;
+        String title = firstNonEmpty(ceo.optString("title", ""), fallback);
+        return title.trim().isEmpty() ? "计划 CEO" : title;
     }
 
     private void showCreateCodexSessionDialog() {
@@ -2073,6 +2137,7 @@ public class MainActivity extends Activity {
         top.setGravity(Gravity.CENTER_VERTICAL);
 
         String projectTitle = firstNonEmpty(project.optString("title", ""), project.optString("name", ""), "未命名项目");
+        String projectId = project.optString("id", "").trim();
         TextView title = new TextView(this);
         title.setText(projectTitle);
         title.setTextSize(15);
@@ -2126,7 +2191,7 @@ public class MainActivity extends Activity {
         if (ceo != null) {
             LinearLayout.LayoutParams ceoParams = matchWrap();
             ceoParams.topMargin = dp(8);
-            card.addView(makePlanPersonRow("专属 CEO", ceo), ceoParams);
+            card.addView(makePlanPersonRow("专属 CEO", ceo, projectId, projectTitle), ceoParams);
         }
 
         JSONArray agents = project.optJSONArray("agents");
@@ -2171,7 +2236,6 @@ public class MainActivity extends Activity {
             reportView.setEllipsize(TextUtils.TruncateAt.END);
             card.addView(reportView, matchWrap());
         }
-        String projectId = project.optString("id", "").trim();
         if (!projectId.isEmpty()) {
             LinearLayout actions = new LinearLayout(this);
             actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -2192,11 +2256,22 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout makePlanPersonRow(String prefix, JSONObject person) {
+        return makePlanPersonRow(prefix, person, "", "");
+    }
+
+    private LinearLayout makePlanPersonRow(String prefix, JSONObject person, String projectId, String projectTitle) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(8), dp(6), dp(8), dp(6));
-        row.setBackground(makePanelBackground(Color.WHITE, dp(12), 1, Color.rgb(230, 235, 243)));
+        boolean opensCeoChat = projectId != null && !projectId.trim().isEmpty();
+        if (opensCeoChat) {
+            row.setClickable(true);
+            row.setOnClickListener(view -> openPlanCeoChat(projectId, projectTitle, person));
+            row.setBackground(makePanelBackground(Color.rgb(244, 248, 255), dp(12), 1, Color.rgb(203, 219, 246)));
+        } else {
+            row.setBackground(makePanelBackground(Color.WHITE, dp(12), 1, Color.rgb(230, 235, 243)));
+        }
 
         LinearLayout textBlock = new LinearLayout(this);
         textBlock.setOrientation(LinearLayout.VERTICAL);
@@ -2225,6 +2300,13 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(48), dp(26));
         progressParams.leftMargin = dp(8);
         row.addView(progress, progressParams);
+        if (opensCeoChat) {
+            TextView chatBadge = makeBadge("对话", Color.rgb(230, 241, 255), Color.rgb(31, 96, 164));
+            chatBadge.setTextSize(11);
+            LinearLayout.LayoutParams chatParams = new LinearLayout.LayoutParams(dp(44), dp(26));
+            chatParams.leftMargin = dp(6);
+            row.addView(chatBadge, chatParams);
+        }
         return row;
     }
 
@@ -2832,6 +2914,9 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.39", "点击计划 CEO 进入 CEO 聊天。"));
+        v0.entries.add(new ReleaseEntry("0.39", "CEO 首次对话会自动建立会话。"));
+        v0.entries.add(new ReleaseEntry("0.39", "CEO 聊天返回后回到计划页。"));
         v0.entries.add(new ReleaseEntry("0.38", "煮元宵优化 session 队列轮询。"));
         v0.entries.add(new ReleaseEntry("0.38", "移除旧的全局队列页面残留代码。"));
         v0.entries.add(new ReleaseEntry("0.38", "相同队列状态不再重复重绘。"));
@@ -3317,6 +3402,10 @@ public class MainActivity extends Activity {
     }
 
     private void openCodexSessionChat(JSONObject session) {
+        openCodexSessionChat(session, false);
+    }
+
+    private void openCodexSessionChat(JSONObject session, boolean returnToPlan) {
         String sessionId = session.optString("id", "").trim();
         if (sessionId.isEmpty()) {
             appendLog("这个 Codex 会话没有可用 session id。");
@@ -3324,6 +3413,7 @@ public class MainActivity extends Activity {
         }
         selectedCodexSessionId = sessionId;
         selectedCodexSessionTitle = session.optString("title", "未命名会话").trim();
+        sessionReturnToPlan = returnToPlan;
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .edit()
                 .putString(KEY_CODEX_SESSION_ID, selectedCodexSessionId)
@@ -3336,6 +3426,7 @@ public class MainActivity extends Activity {
     private void clearSelectedCodexSession(boolean userInitiated) {
         selectedCodexSessionId = "";
         selectedCodexSessionTitle = "";
+        sessionReturnToPlan = false;
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .edit()
                 .remove(KEY_CODEX_SESSION_ID)

@@ -7,7 +7,8 @@
 - Bumped the delivery APK to `yuanxiao-0.41.apk`.
 - Built and signature-verified `yuanxiao-0.41.apk`; SHA256 `1f75842ab3505827c5f535e9363de84036cd8768a6eedb96c8c40e5988e1979b`.
 - Public session-history smoke test returned `status=ok`, `source=codex-session-log`, `quota_cost=none_file_scan_only`, and 3 messages.
-- Quark upload, GitHub push, and Feishu/Yutu reminder are part of this `煮元宵` delivery.
+- Uploaded `yuanxiao-0.41.apk` to the existing Quark root/home `元宵` folder; Quark showed it at the top of the folder with timestamp 2026-05-08 15:42.
+- Pushed GitHub `SongDingQing/YuanXiao` main and recorded this delivery.
 
 ## 0.40
 

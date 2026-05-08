@@ -108,7 +108,7 @@ Plan Agent create smoke test passed on 2026-05-08: public HTTPS `/api/plan/agent
 
 The latest Quark Netdisk folder `元宵` upload is:
 
-- 首页的 `元宵` 文件夹 / `yuanxiao-0.38.apk`
+- 首页的 `元宵` 文件夹 / `yuanxiao-0.41.apk`
 - Future YuanXiao packages must be uploaded into this existing folder only.
 
-The latest source-line local build is `<yuanxiao.apk.outputDir>/yuanxiao-0.41.apk`; the latest Quark delivery APK remains `yuanxiao-0.38.apk` until this `煮元宵` delivery finishes. YuanXiao v0.41 keeps ChangE transport receipts out of dedicated Codex-session chat bubbles and avoids unnecessary full re-renders during initial Codex-session history sync.
+The latest source-line local build and Quark delivery APK are `<yuanxiao.apk.outputDir>/yuanxiao-0.41.apk` / `yuanxiao-0.41.apk`, uploaded to the existing home/root-level `元宵` folder on 2026-05-08 as part of the standard `煮元宵` workflow. YuanXiao v0.41 keeps ChangE transport receipts out of dedicated Codex-session chat bubbles and avoids unnecessary full re-renders during initial Codex-session history sync.

@@ -14,7 +14,7 @@ Native Android client and relay-side source for the private YuanXiao bridge used
 
 - Current app version: `0.41`
 - Delivery APK name: `yuanxiao-0.41.apk`
-- Latest Quark delivery APK: `yuanxiao-0.38.apk`
+- Latest Quark delivery APK: `yuanxiao-0.41.apk`
 - Installed Android app label: `元宵`
 - Public relay: configured locally through `android/YuanXiao/local.properties` and `ops/config/yuanxiao.env`.
 - Standard delivery workflow: `煮元宵` means optimize, build, signature-verify, upload to Quark Netdisk folder `元宵`, push this repository, and send the Feishu/Yutu completion reminder.

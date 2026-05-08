@@ -21,7 +21,7 @@ Use the example config files as templates.
 
 - App version: `0.41`
 - Local build APK name: `yuanxiao-0.41.apk`
-- Latest Quark delivery APK: `yuanxiao-0.38.apk`
+- Latest Quark delivery APK: `yuanxiao-0.41.apk`
 - Installed Android label: `元宵`
 - Latest major behavior: bottom Hermes/Codex/Plan tabs, compact Codex session
   rows, persistent main ChangE chat, Codex session chat/history sync, Codex

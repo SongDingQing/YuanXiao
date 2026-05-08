@@ -184,6 +184,7 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
             "projects": [],
             "summary": {
                 "project_count": 0,
+                "ceo_count": 0,
                 "agent_count": 0,
                 "active_agents": 0,
                 "blocked_agents": 0,
@@ -214,6 +215,7 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
             "projects": [],
             "summary": {
                 "project_count": 0,
+                "ceo_count": 0,
                 "agent_count": 0,
                 "active_agents": 0,
                 "blocked_agents": 0,
@@ -226,6 +228,7 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
     raw_projects = data.get("projects") if isinstance(data.get("projects"), list) else []
     projects: list[dict[str, Any]] = []
     agent_count = 0
+    ceo_count = 0
     active_agents = 0
     blocked_agents = 0
     for index, raw_project in enumerate(raw_projects[:normalized_limit]):
@@ -235,9 +238,13 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
             normalize_plan_person(agent, f"Agent {agent_index + 1}")
             for agent_index, agent in enumerate(raw_project.get("agents") if isinstance(raw_project.get("agents"), list) else [])
         ]
+        ceo = normalize_plan_person(raw_project.get("ceo"), "CEO")
+        if ceo.get("id"):
+            ceo_count += 1
         agent_count += len(agents)
         active_agents += sum(1 for agent in agents if agent.get("status") in {"active", "running"})
         blocked_agents += sum(1 for agent in agents if agent.get("status") in {"blocked", "failed"})
+        requests = raw_project.get("requests") if isinstance(raw_project.get("requests"), list) else []
         project = {
             "id": str(raw_project.get("id") or f"project-{index + 1}"),
             "title": str(raw_project.get("title") or raw_project.get("name") or "未命名项目").strip() or "未命名项目",
@@ -245,7 +252,14 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
             "progress": normalized_progress(raw_project.get("progress", raw_project.get("progress_percent", 0))),
             "updated_at": str(raw_project.get("updated_at") or data.get("updated_at") or "").strip(),
             "last_report": compact_preview_text(str(raw_project.get("last_report") or ""), 180),
-            "ceo": normalize_plan_person(raw_project.get("ceo"), "CEO"),
+            "objective": compact_preview_text(str(raw_project.get("objective") or raw_project.get("owner_request") or ""), 220),
+            "orchestration_mode": str(raw_project.get("orchestration_mode") or "change_managed_async").strip(),
+            "reporting_policy": str(raw_project.get("reporting_policy") or "change_only").strip(),
+            "request_count": len(requests),
+            "latest_request": compact_preview_text(str((requests[-1] if requests else {}).get("text") or ""), 180)
+            if requests
+            else "",
+            "ceo": ceo,
             "agents": agents,
         }
         projects.append(project)
@@ -255,6 +269,7 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
         "projects": projects,
         "summary": {
             "project_count": len(projects),
+            "ceo_count": ceo_count,
             "agent_count": agent_count,
             "active_agents": active_agents,
             "blocked_agents": blocked_agents,
@@ -371,7 +386,10 @@ def default_plan_project(title: str = "元宵测试计划") -> dict[str, Any]:
         "title": bounded_plan_text(title or "元宵测试计划", 80),
         "status": "queued",
         "progress": 0,
-        "last_report": "等待 Agent 汇报。",
+        "objective": "",
+        "orchestration_mode": "change_managed_async",
+        "reporting_policy": "change_only",
+        "last_report": "等待主人向 CEO 提出要求。",
         "updated_at": now_iso(),
         "ceo": {
             "id": f"ceo-{uuid.uuid4().hex[:8]}",
@@ -380,10 +398,12 @@ def default_plan_project(title: str = "元宵测试计划") -> dict[str, Any]:
             "session_id": "",
             "status": "queued",
             "progress": 0,
-            "last_report": "",
+            "current_task": "等待主人提出计划目标。",
+            "last_report": "CEO 已建立，汇报只交给嫦娥统一管理。",
             "updated_at": now_iso(),
         },
         "agents": [],
+        "requests": [],
     }
 
 
@@ -466,6 +486,128 @@ def create_plan_agent(payload: dict[str, Any]) -> dict[str, Any]:
         "project_id": str(project.get("id") or ""),
         "project_title": str(project.get("title") or ""),
         "agent": normalize_plan_person(agent, name),
+        "time": now_iso(),
+    }
+
+
+def create_plan_project(payload: dict[str, Any]) -> dict[str, Any]:
+    title = bounded_plan_text(payload.get("title") or payload.get("project_title") or "新计划", 80)
+    if not title:
+        title = "新计划"
+    ceo_name = bounded_plan_text(payload.get("ceo_name") or "计划 CEO", 60)
+    if not ceo_name:
+        ceo_name = "计划 CEO"
+    owner_request = bounded_plan_text(payload.get("owner_request") or payload.get("requirement") or "", 700)
+    now = now_iso()
+    with PLAN_STATE_LOCK:
+        state = load_plan_state_for_write()
+        projects = state.setdefault("projects", [])
+        if not isinstance(projects, list):
+            projects = []
+            state["projects"] = projects
+        project = {
+            "id": str(payload.get("project_id") or f"plan-{uuid.uuid4().hex[:8]}"),
+            "title": title,
+            "status": "running" if owner_request else "queued",
+            "progress": 5 if owner_request else 0,
+            "objective": owner_request,
+            "orchestration_mode": "change_managed_async",
+            "reporting_policy": "change_only",
+            "last_report": "嫦娥已记录主人要求，等待 CEO 拆解。" if owner_request else "等待主人向 CEO 提出要求。",
+            "updated_at": now,
+            "ceo": {
+                "id": f"ceo-{uuid.uuid4().hex[:8]}",
+                "name": ceo_name,
+                "role": "CEO",
+                "session_id": str(payload.get("ceo_session_id") or "").strip(),
+                "status": "running" if owner_request else "queued",
+                "progress": 5 if owner_request else 0,
+                "current_task": owner_request or "等待主人提出计划目标。",
+                "last_report": "已收到主人要求；后续只向嫦娥汇报，不要求下级互相等待。"
+                if owner_request
+                else "CEO 已建立，汇报只交给嫦娥统一管理。",
+                "updated_at": now,
+            },
+            "agents": [],
+            "requests": [],
+        }
+        if owner_request:
+            project["requests"].append(
+                {
+                    "id": f"req-{uuid.uuid4().hex[:8]}",
+                    "from": "owner",
+                    "text": owner_request,
+                    "created_at": now,
+                    "status": "received_by_change",
+                }
+            )
+        projects.insert(0, project)
+        append_plan_event(state, "project_ceo_created_by_yuanxiao", project_id=project["id"], title=title)
+        save_plan_state(state)
+    return {
+        "status": "ok",
+        "source": "plan-state-file",
+        "capability": "plan-project-create",
+        "quota_cost": "none_file_update_only",
+        "project": read_plan_projects(1).get("projects", [{}])[0],
+        "time": now_iso(),
+    }
+
+
+def submit_plan_ceo_request(payload: dict[str, Any]) -> dict[str, Any]:
+    project_id = str(payload.get("project_id") or "").strip()
+    request_text = bounded_plan_text(payload.get("message") or payload.get("owner_request") or payload.get("requirement") or "", 900)
+    if not project_id:
+        raise ValueError("missing_project_id")
+    if not request_text:
+        raise ValueError("empty_request")
+    now = now_iso()
+    with PLAN_STATE_LOCK:
+        state = load_plan_state_for_write()
+        project, _ = find_writable_plan_project(state, project_id, "")
+        requests = project.setdefault("requests", [])
+        if not isinstance(requests, list):
+            requests = []
+            project["requests"] = requests
+        requests.append(
+            {
+                "id": f"req-{uuid.uuid4().hex[:8]}",
+                "from": "owner",
+                "text": request_text,
+                "created_at": now,
+                "status": "received_by_change",
+            }
+        )
+        del requests[:-30]
+        if not str(project.get("objective") or "").strip():
+            project["objective"] = request_text
+        project["orchestration_mode"] = "change_managed_async"
+        project["reporting_policy"] = "change_only"
+        project["status"] = "running"
+        project["progress"] = max(normalized_progress(project.get("progress", 0)), 5)
+        project["last_report"] = "嫦娥已接收新要求，交由计划 CEO 拆解。"
+        project["updated_at"] = now
+        ceo = project.setdefault("ceo", {})
+        if not isinstance(ceo, dict):
+            ceo = {}
+            project["ceo"] = ceo
+        ceo.setdefault("id", f"ceo-{uuid.uuid4().hex[:8]}")
+        ceo.setdefault("name", "计划 CEO")
+        ceo["role"] = "CEO"
+        ceo["status"] = "running"
+        ceo["progress"] = max(normalized_progress(ceo.get("progress", 0)), 5)
+        ceo["current_task"] = request_text
+        ceo["last_report"] = "已收到主人新要求；只向嫦娥汇报，由嫦娥统一拉起和管理后续角色。"
+        ceo["updated_at"] = now
+        append_plan_event(state, "ceo_request_received_by_yuanxiao", project_id=project_id, request=request_text)
+        save_plan_state(state)
+    return {
+        "status": "ok",
+        "source": "plan-state-file",
+        "capability": "plan-ceo-request",
+        "quota_cost": "none_file_update_only",
+        "project_id": project_id,
+        "reporting_policy": "change_only",
         "time": now_iso(),
     }
 
@@ -1922,6 +2064,9 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                     "codex_session_rename": True,
                     "plan_view": True,
                     "plan_agent_create": True,
+                    "plan_project_create": True,
+                    "plan_ceo_request": True,
+                    "plan_reporting_policy": "change_only",
                     "plan_smoke_test_complete": True,
                     "task_queue": True,
                     "queue_reorder": "queued_only",
@@ -1985,6 +2130,8 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             "/api/codex/session/create",
             "/api/codex/session/rename",
             "/api/plan/agent/create",
+            "/api/plan/project/create",
+            "/api/plan/ceo/request",
             "/api/queue/reorder",
         }:
             self._send_json({"error": "not_found"}, status=404)
@@ -2020,6 +2167,46 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                     {
                         "status": "error",
                         "error": "plan_agent_create_failed",
+                        "detail": str(exc),
+                        "time": now_iso(),
+                    },
+                    status=500,
+                )
+                return
+            self._send_json(response)
+            return
+
+        if parsed.path == "/api/plan/project/create":
+            try:
+                response = create_plan_project(payload)
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "plan_project_create_failed",
+                        "detail": str(exc),
+                        "time": now_iso(),
+                    },
+                    status=500,
+                )
+                return
+            self._send_json(response)
+            return
+
+        if parsed.path == "/api/plan/ceo/request":
+            try:
+                response = submit_plan_ceo_request(payload)
+            except ValueError as exc:
+                self._send_json({"status": "error", "error": str(exc), "time": now_iso()}, status=400)
+                return
+            except LookupError as exc:
+                self._send_json({"status": "error", "error": str(exc), "time": now_iso()}, status=404)
+                return
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "plan_ceo_request_failed",
                         "detail": str(exc),
                         "time": now_iso(),
                     },

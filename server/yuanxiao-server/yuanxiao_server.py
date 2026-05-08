@@ -242,6 +242,9 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
                     "codex_session_rename": True,
                     "plan_view": True,
                     "plan_agent_create": True,
+                    "plan_project_create": True,
+                    "plan_ceo_request": True,
+                    "plan_reporting_policy": "change_only",
                     "task_queue": True,
                     "queue_reorder": "queued_only",
                     "async_chat_default": ASYNC_CHAT_DEFAULT,
@@ -370,6 +373,8 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             "/api/codex/session/create",
             "/api/codex/session/rename",
             "/api/plan/agent/create",
+            "/api/plan/project/create",
+            "/api/plan/ceo/request",
             "/api/queue/reorder",
         }:
             try:

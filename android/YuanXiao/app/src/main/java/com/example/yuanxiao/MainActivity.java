@@ -80,7 +80,8 @@ public class MainActivity extends Activity {
     private static final String CODEX_SESSION_CREATE_URL = endpoint("/api/codex/session/create");
     private static final String CODEX_SESSION_RENAME_URL = endpoint("/api/codex/session/rename");
     private static final String PLAN_PROJECTS_URL = endpoint("/api/plan/projects?limit=30");
-    private static final String PLAN_AGENT_CREATE_URL = endpoint("/api/plan/agent/create");
+    private static final String PLAN_PROJECT_CREATE_URL = endpoint("/api/plan/project/create");
+    private static final String PLAN_CEO_REQUEST_URL = endpoint("/api/plan/ceo/request");
     private static final String QUEUE_TASKS_URL = endpoint("/api/queue/tasks?limit=30");
     private static final String QUEUE_REORDER_URL = endpoint("/api/queue/reorder");
     private static final String NOTIFICATION_CHANNEL_ID = "yuanxiao_messages";
@@ -517,7 +518,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.35", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.36", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -980,16 +981,16 @@ public class MainActivity extends Activity {
         titleBlock.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("CEO 分解 · Agent 异步汇报");
+        subtitle.setText("多计划 · CEO 编排 · 嫦娥统一汇报");
         subtitle.setTextSize(12);
         subtitle.setTextColor(Color.rgb(91, 101, 116));
         titleBlock.addView(subtitle);
         top.addView(titleBlock, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        planCreateAgentButton = makeActionChip("Agent", Color.rgb(231, 241, 255), Color.rgb(31, 96, 164));
+        planCreateAgentButton = makeActionChip("新计划", Color.rgb(231, 241, 255), Color.rgb(31, 96, 164));
         planCreateAgentButton.setTextSize(12);
-        planCreateAgentButton.setOnClickListener(view -> showCreatePlanAgentDialog());
-        LinearLayout.LayoutParams createAgentParams = new LinearLayout.LayoutParams(dp(70), dp(38));
+        planCreateAgentButton.setOnClickListener(view -> showCreatePlanProjectDialog());
+        LinearLayout.LayoutParams createAgentParams = new LinearLayout.LayoutParams(dp(78), dp(38));
         createAgentParams.rightMargin = dp(8);
         top.addView(planCreateAgentButton, createAgentParams);
 
@@ -1524,60 +1525,150 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void showCreatePlanAgentDialog() {
-        EditText nameInput = makeSessionTitleInput("测试 Agent");
-        nameInput.setText("测试 Agent");
-        nameInput.selectAll();
+    private void showCreatePlanProjectDialog() {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(4), dp(2), dp(4), 0);
+
+        EditText titleInput = makeSessionTitleInput("计划名称");
+        titleInput.setText("新计划");
+        form.addView(titleInput, matchWrap());
+
+        EditText ceoInput = makeSessionTitleInput("CEO 名称");
+        ceoInput.setText("计划 CEO");
+        LinearLayout.LayoutParams ceoParams = matchWrap();
+        ceoParams.topMargin = dp(8);
+        form.addView(ceoInput, ceoParams);
+
+        EditText requestInput = makePlanMultilineInput("告诉 CEO 这个计划要做什么");
+        LinearLayout.LayoutParams requestParams = matchWrap();
+        requestParams.topMargin = dp(8);
+        form.addView(requestInput, requestParams);
+
+        titleInput.selectAll();
         new AlertDialog.Builder(this)
-                .setTitle("新建 Agent")
-                .setView(nameInput)
+                .setTitle("新建计划 CEO")
+                .setView(form)
                 .setNegativeButton("取消", null)
-                .setPositiveButton("创建", (dialog, which) -> createPlanAgent(nameInput.getText().toString()))
+                .setPositiveButton("创建", (dialog, which) -> createPlanProject(
+                        titleInput.getText().toString(),
+                        ceoInput.getText().toString(),
+                        requestInput.getText().toString()
+                ))
                 .show();
     }
 
-    private String sanitizePlanAgentName(String rawName) {
-        String name = rawName == null ? "" : rawName.trim().replaceAll("\\s+", " ");
-        if (name.isEmpty()) {
-            name = "测试 Agent";
-        }
-        if (name.length() > 60) {
-            name = name.substring(0, 60).trim();
-        }
-        return name.isEmpty() ? "测试 Agent" : name;
+    private EditText makePlanMultilineInput(String hint) {
+        EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setMinLines(3);
+        input.setMaxLines(6);
+        input.setGravity(Gravity.TOP | Gravity.START);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setImeOptions(EditorInfo.IME_ACTION_NONE);
+        input.setTextSize(15);
+        input.setPadding(dp(16), dp(10), dp(16), dp(10));
+        input.setBackground(makePanelBackground(Color.rgb(247, 249, 252), dp(14), 1, Color.rgb(226, 232, 240)));
+        return input;
     }
 
-    private void createPlanAgent(String rawName) {
-        String name = sanitizePlanAgentName(rawName);
+    private String sanitizePlanTitle(String rawTitle) {
+        String title = rawTitle == null ? "" : rawTitle.trim().replaceAll("\\s+", " ");
+        if (title.isEmpty()) {
+            title = "新计划";
+        }
+        if (title.length() > 60) {
+            title = title.substring(0, 60).trim();
+        }
+        return title.isEmpty() ? "新计划" : title;
+    }
+
+    private String sanitizePlanCeoName(String rawName) {
+        String name = rawName == null ? "" : rawName.trim().replaceAll("\\s+", " ");
+        if (name.isEmpty()) {
+            name = "计划 CEO";
+        }
+        if (name.length() > 40) {
+            name = name.substring(0, 40).trim();
+        }
+        return name.isEmpty() ? "计划 CEO" : name;
+    }
+
+    private String sanitizePlanRequest(String rawRequest) {
+        String request = rawRequest == null ? "" : rawRequest.trim().replaceAll("\\s+", " ");
+        if (request.length() > 700) {
+            request = request.substring(0, 700).trim();
+        }
+        return request;
+    }
+
+    private void createPlanProject(String rawTitle, String rawCeoName, String rawRequest) {
+        String title = sanitizePlanTitle(rawTitle);
+        String ceoName = sanitizePlanCeoName(rawCeoName);
+        String ownerRequest = sanitizePlanRequest(rawRequest);
         setPlanCreateAgentBusy(true);
-        appendLog("正在创建计划 Agent：" + name);
+        appendLog("正在创建计划 CEO：" + title);
         executor.execute(() -> {
             try {
                 JSONObject request = new JSONObject();
-                if (!lastPlanProjectIds.isEmpty()) {
-                    request.put("project_id", lastPlanProjectIds.get(0));
-                }
-                request.put("project_title", "元宵测试计划");
-                request.put("name", name);
-                request.put("role", "Agent");
-                request.put("current_task", "等待主人分配任务。");
-                request.put("status", "queued");
-                if (name.contains("测试")) {
-                    request.put("smoke_test", true);
-                    request.put("current_task", "验证计划页新建 Agent 功能。");
-                }
-                JSONObject response = postJson(PLAN_AGENT_CREATE_URL, request);
+                request.put("title", title);
+                request.put("ceo_name", ceoName);
+                request.put("owner_request", ownerRequest);
+                request.put("orchestration_mode", "change_managed_async");
+                request.put("reporting_policy", "change_only");
+                JSONObject response = postJson(PLAN_PROJECT_CREATE_URL, request);
                 if (!"ok".equals(response.optString("status"))) {
-                    throw new IllegalStateException(response.optString("error", "plan_agent_create_failed"));
+                    throw new IllegalStateException(response.optString("error", "plan_project_create_failed"));
                 }
                 runOnUiThread(() -> {
                     setPlanCreateAgentBusy(false);
                     pollPlanView();
-                    appendLog("计划 Agent 已创建：" + name);
+                    appendLog("计划 CEO 已创建：" + title);
                 });
             } catch (Exception exception) {
                 runOnUiThread(() -> setPlanCreateAgentBusy(false));
-                appendLogFromWorker("创建计划 Agent 失败：" + exception.getMessage());
+                appendLogFromWorker("创建计划 CEO 失败：" + exception.getMessage());
+            }
+        });
+    }
+
+    private void showPlanCeoRequestDialog(String projectId, String projectTitle) {
+        EditText requestInput = makePlanMultilineInput("继续告诉 CEO 要做什么");
+        new AlertDialog.Builder(this)
+                .setTitle("交给 CEO")
+                .setView(requestInput)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("发送", (dialog, which) -> submitPlanCeoRequest(
+                        projectId,
+                        projectTitle,
+                        requestInput.getText().toString()
+                ))
+                .show();
+    }
+
+    private void submitPlanCeoRequest(String projectId, String projectTitle, String rawRequest) {
+        String requestText = sanitizePlanRequest(rawRequest);
+        if (requestText.isEmpty()) {
+            appendLog("计划要求不能为空。");
+            return;
+        }
+        appendLog("正在交给计划 CEO：" + projectTitle);
+        executor.execute(() -> {
+            try {
+                JSONObject request = new JSONObject();
+                request.put("project_id", projectId);
+                request.put("message", requestText);
+                request.put("reporting_policy", "change_only");
+                JSONObject response = postJson(PLAN_CEO_REQUEST_URL, request);
+                if (!"ok".equals(response.optString("status"))) {
+                    throw new IllegalStateException(response.optString("error", "plan_ceo_request_failed"));
+                }
+                runOnUiThread(() -> {
+                    pollPlanView();
+                    appendLog("要求已交给 CEO，由嫦娥统一管理汇报。");
+                });
+            } catch (Exception exception) {
+                appendLogFromWorker("交给计划 CEO 失败：" + exception.getMessage());
             }
         });
     }
@@ -1716,7 +1807,7 @@ public class MainActivity extends Activity {
         planCreateAgentInFlight = busy;
         planCreateAgentButton.setEnabled(!busy);
         planCreateAgentButton.setAlpha(busy ? 0.55f : 1f);
-        planCreateAgentButton.setText(busy ? "等待" : "Agent");
+        planCreateAgentButton.setText(busy ? "等待" : "新计划");
     }
 
     private void setSessionRenameBusy(boolean busy) {
@@ -1893,11 +1984,12 @@ public class MainActivity extends Activity {
     private void renderPlanProjects(JSONObject response) {
         JSONObject summary = response.optJSONObject("summary");
         int projectCount = summary == null ? 0 : summary.optInt("project_count", 0);
+        int ceoCount = summary == null ? projectCount : summary.optInt("ceo_count", projectCount);
         int agentCount = summary == null ? 0 : summary.optInt("agent_count", 0);
         int activeAgents = summary == null ? 0 : summary.optInt("active_agents", 0);
         int blockedAgents = summary == null ? 0 : summary.optInt("blocked_agents", 0);
         if (planSummary != null) {
-            planSummary.setText(projectCount + " 项 · " + activeAgents + "/" + agentCount + "\nAgent");
+            planSummary.setText(projectCount + " 计划 · " + ceoCount + " CEO\n编排");
         }
         if (planUpdated != null) {
             String updatedAt = response.optString("updated_at", response.optString("time", ""));
@@ -1912,7 +2004,7 @@ public class MainActivity extends Activity {
         JSONArray projects = response.optJSONArray("projects");
         if (projects == null || projects.length() == 0) {
             TextView empty = new TextView(this);
-            empty.setText("暂无计划项目。");
+            empty.setText("暂无计划。点击新计划创建一个专属 CEO。");
             empty.setTextSize(14);
             empty.setTextColor(Color.rgb(91, 101, 116));
             empty.setGravity(Gravity.CENTER);
@@ -1990,8 +2082,9 @@ public class MainActivity extends Activity {
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
 
+        String projectTitle = firstNonEmpty(project.optString("title", ""), project.optString("name", ""), "未命名项目");
         TextView title = new TextView(this);
-        title.setText(firstNonEmpty(project.optString("title", ""), project.optString("name", ""), "未命名项目"));
+        title.setText(projectTitle);
         title.setTextSize(15);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(Color.rgb(29, 36, 48));
@@ -2020,15 +2113,34 @@ public class MainActivity extends Activity {
         progressRow.addView(updated, updatedParams);
         card.addView(progressRow, matchWrap());
 
+        String objective = compactOneLine(firstNonEmpty(project.optString("objective", ""), project.optString("latest_request", "")), 110);
+        if (!objective.isEmpty()) {
+            TextView objectiveView = new TextView(this);
+            objectiveView.setText(objective);
+            objectiveView.setTextSize(12);
+            objectiveView.setTextColor(Color.rgb(78, 89, 106));
+            objectiveView.setPadding(dp(4), dp(7), dp(4), 0);
+            objectiveView.setSingleLine(true);
+            objectiveView.setEllipsize(TextUtils.TruncateAt.END);
+            card.addView(objectiveView, matchWrap());
+        }
+
+        TextView policy = new TextView(this);
+        policy.setText("嫦娥统一汇报 · Agent 不互相等待");
+        policy.setTextSize(11);
+        policy.setTextColor(Color.rgb(111, 78, 24));
+        policy.setPadding(dp(4), dp(6), dp(4), 0);
+        card.addView(policy, matchWrap());
+
         JSONObject ceo = project.optJSONObject("ceo");
         if (ceo != null) {
             LinearLayout.LayoutParams ceoParams = matchWrap();
             ceoParams.topMargin = dp(8);
-            card.addView(makePlanPersonRow("CEO", ceo), ceoParams);
+            card.addView(makePlanPersonRow("专属 CEO", ceo), ceoParams);
         }
 
         JSONArray agents = project.optJSONArray("agents");
-        if (agents != null) {
+        if (agents != null && agents.length() > 0) {
             int maxRows = Math.min(agents.length(), 6);
             for (int i = 0; i < maxRows; i++) {
                 JSONObject agent = agents.optJSONObject(i);
@@ -2037,16 +2149,25 @@ public class MainActivity extends Activity {
                 }
                 LinearLayout.LayoutParams rowParams = matchWrap();
                 rowParams.topMargin = dp(6);
-                card.addView(makePlanPersonRow("Agent", agent), rowParams);
+                card.addView(makePlanPersonRow(planPersonPrefix(agent), agent), rowParams);
             }
             if (agents.length() > maxRows) {
                 TextView more = new TextView(this);
-                more.setText("还有 " + (agents.length() - maxRows) + " 个 Agent");
+                more.setText("还有 " + (agents.length() - maxRows) + " 个执行角色");
                 more.setTextSize(12);
                 more.setTextColor(Color.rgb(104, 112, 126));
                 more.setPadding(dp(4), dp(6), dp(4), 0);
                 card.addView(more, matchWrap());
             }
+        } else {
+            TextView emptyAgents = new TextView(this);
+            emptyAgents.setText("等待 CEO 通过嫦娥提出活动策划、执行层、检查层等角色需求。");
+            emptyAgents.setTextSize(12);
+            emptyAgents.setTextColor(Color.rgb(104, 112, 126));
+            emptyAgents.setPadding(dp(4), dp(7), dp(4), 0);
+            emptyAgents.setSingleLine(true);
+            emptyAgents.setEllipsize(TextUtils.TruncateAt.END);
+            card.addView(emptyAgents, matchWrap());
         }
 
         String report = compactOneLine(project.optString("last_report", ""), 96);
@@ -2059,6 +2180,23 @@ public class MainActivity extends Activity {
             reportView.setSingleLine(true);
             reportView.setEllipsize(TextUtils.TruncateAt.END);
             card.addView(reportView, matchWrap());
+        }
+        String projectId = project.optString("id", "").trim();
+        if (!projectId.isEmpty()) {
+            LinearLayout actions = new LinearLayout(this);
+            actions.setOrientation(LinearLayout.HORIZONTAL);
+            actions.setPadding(0, dp(8), 0, 0);
+            TextView requestButton = makeActionChip("交给CEO", Color.rgb(236, 243, 249), Color.rgb(38, 83, 111));
+            requestButton.setTextSize(12);
+            requestButton.setOnClickListener(view -> showPlanCeoRequestDialog(projectId, projectTitle));
+            actions.addView(requestButton, new LinearLayout.LayoutParams(dp(86), dp(34)));
+
+            TextView mode = makeBadge("嫦娥管控", Color.rgb(247, 241, 226), Color.rgb(111, 78, 24));
+            mode.setTextSize(11);
+            LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(dp(86), dp(34));
+            modeParams.leftMargin = dp(8);
+            actions.addView(mode, modeParams);
+            card.addView(actions, matchWrap());
         }
         return card;
     }
@@ -2264,6 +2402,17 @@ public class MainActivity extends Activity {
                 person.optString("role", ""),
                 "未命名"
         );
+    }
+
+    private String planPersonPrefix(JSONObject person) {
+        String role = person.optString("role", "").trim();
+        if (role.isEmpty()) {
+            return "执行角色";
+        }
+        if ("agent".equalsIgnoreCase(role)) {
+            return "执行角色";
+        }
+        return compactOneLine(role, 8);
     }
 
     private int progressFromJson(JSONObject item) {
@@ -2693,6 +2842,9 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.36", "计划页改为多计划 CEO 编排。"));
+        v0.entries.add(new ReleaseEntry("0.36", "新计划会创建专属 CEO。"));
+        v0.entries.add(new ReleaseEntry("0.36", "计划汇报由嫦娥统一管理。"));
         v0.entries.add(new ReleaseEntry("0.35", "复制按钮改为自绘叠框图标。"));
         v0.entries.add(new ReleaseEntry("0.35", "复制图标不再依赖缺字字体。"));
         v0.entries.add(new ReleaseEntry("0.34", "翻历史时新增回到最新箭头。"));

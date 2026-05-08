@@ -155,24 +155,40 @@ def cmd_init(_: argparse.Namespace) -> None:
 def cmd_create_project(args: argparse.Namespace) -> None:
     state = load_state()
     project_id = args.project_id or f"plan-{uuid.uuid4().hex[:8]}"
+    owner_request = bounded_text(args.owner_request, 700)
     project = {
         "id": project_id,
         "title": args.title,
         "status": args.status,
         "progress": normalized_progress(args.progress),
-        "last_report": "",
+        "objective": owner_request,
+        "orchestration_mode": "change_managed_async",
+        "reporting_policy": "change_only",
+        "last_report": "嫦娥已记录主人要求，等待 CEO 拆解。" if owner_request else "",
         "updated_at": now_iso(),
         "ceo": {
             "id": args.ceo_id or f"ceo-{uuid.uuid4().hex[:8]}",
             "name": args.ceo_name,
             "role": "CEO",
             "session_id": args.ceo_session_id,
-            "status": "queued",
-            "progress": 0,
-            "last_report": "",
+            "status": "running" if owner_request else "queued",
+            "progress": 5 if owner_request else 0,
+            "current_task": owner_request or "等待主人提出计划目标。",
+            "last_report": "只向嫦娥汇报，由嫦娥统一调度后续角色。" if owner_request else "",
             "updated_at": now_iso(),
         },
         "agents": [],
+        "requests": [
+            {
+                "id": f"req-{uuid.uuid4().hex[:8]}",
+                "from": "owner",
+                "text": owner_request,
+                "created_at": now_iso(),
+                "status": "received_by_change",
+            }
+        ]
+        if owner_request
+        else [],
     }
     state["projects"].insert(0, project)
     append_event(state, "project_created", project_id=project_id, title=args.title)
@@ -254,6 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--ceo-id", default="")
     create.add_argument("--ceo-name", default="CEO")
     create.add_argument("--ceo-session-id", default="")
+    create.add_argument("--owner-request", default="")
     create.set_defaults(func=cmd_create_project)
 
     add_agent = subparsers.add_parser("add-agent")

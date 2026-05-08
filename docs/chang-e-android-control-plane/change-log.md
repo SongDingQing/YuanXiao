@@ -1,5 +1,13 @@
 # YuanXiao Change Log
 
+## 0.36
+
+- Changed the Plan tab into a multi-plan CEO orchestration view.
+- Added plan creation that creates a dedicated CEO instead of a test Agent.
+- Added per-plan `交给 CEO` requests while keeping ChangE as the only reporting manager.
+- Added plan state fields for `change_managed_async` orchestration and `change_only` reporting.
+- Built and signature-verified local `yuanxiao-0.36.apk`; SHA256 `dccd9c28913cd5cac2a198ca66fb82866ce13127bf8bc12d9e8ff7c2352b0ee1`; Quark latest remains v0.35 until the next `煮元宵`.
+
 ## 0.35
 
 - Replaced the font-dependent copy glyph with a self-drawn two-card copy icon.

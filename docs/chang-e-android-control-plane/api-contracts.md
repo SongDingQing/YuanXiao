@@ -84,6 +84,8 @@ Renames a Codex session in local Codex state.
 
 Returns local async orchestration state for YuanXiao's Plan tab. The bridge
 reads this from the private `YUANXIAO_PLAN_STATE_FILE`; no model call is made.
+Each project is a separate plan with one dedicated CEO. ChangE owns reporting
+and orchestration; worker roles do not wait for one another's internal reports.
 
 Response shape:
 
@@ -98,6 +100,9 @@ Response shape:
       "progress": 40,
       "updated_at": "2026-05-08T00:00:00+00:00",
       "last_report": "Latest summary",
+      "objective": "Owner request",
+      "orchestration_mode": "change_managed_async",
+      "reporting_policy": "change_only",
       "ceo": {
         "id": "ceo-id",
         "name": "CEO",
@@ -121,6 +126,7 @@ Response shape:
   ],
   "summary": {
     "project_count": 1,
+    "ceo_count": 1,
     "agent_count": 1,
     "active_agents": 1,
     "blocked_agents": 0
@@ -133,9 +139,58 @@ Response shape:
 When the plan state file has not changed, the bridge may return
 `"scan_cost": "cache_hit"`.
 
+`POST /api/plan/project/create`
+
+Creates a new plan and its dedicated CEO in `YUANXIAO_PLAN_STATE_FILE`. This is
+the phone-side entry for a new multi-agent plan. It writes state only and does
+not call Codex/Hermes directly.
+
+Request shape:
+
+```json
+{
+  "title": "新品活动计划",
+  "ceo_name": "活动 CEO",
+  "owner_request": "拆解活动策划、执行层和检查层。",
+  "orchestration_mode": "change_managed_async",
+  "reporting_policy": "change_only"
+}
+```
+
+Response shape:
+
+```json
+{
+  "status": "ok",
+  "capability": "plan-project-create",
+  "quota_cost": "none_file_update_only",
+  "project": {
+    "id": "plan-id",
+    "title": "新品活动计划",
+    "reporting_policy": "change_only"
+  }
+}
+```
+
+`POST /api/plan/ceo/request`
+
+Adds a new owner request to a plan's CEO. ChangE records the request, keeps the
+project in `change_managed_async` mode, and keeps all progress reporting under
+ChangE management.
+
+Request shape:
+
+```json
+{
+  "project_id": "plan-id",
+  "message": "请先拆成活动策划、素材执行和复盘检查。",
+  "reporting_policy": "change_only"
+}
+```
+
 `POST /api/plan/agent/create`
 
-Creates a local Plan-tab Agent in `YUANXIAO_PLAN_STATE_FILE`. If `project_id`
+Legacy local state helper for adding an execution role in `YUANXIAO_PLAN_STATE_FILE`. If `project_id`
 is omitted and no project exists yet, the bridge creates a local test plan first.
 This does not call a model.
 

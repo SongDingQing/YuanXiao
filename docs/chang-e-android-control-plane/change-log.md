@@ -1,5 +1,12 @@
 # YuanXiao Change Log
 
+## 0.37
+
+- Removed the top-level Queue tab from the bottom navigation.
+- Added a request queue panel inside each dedicated Codex session chat page.
+- Queue reads now expose and filter session/agent fields so YuanXiao can show the current agent's own request queue.
+- Built and signature-verified local `yuanxiao-0.37.apk`; SHA256 `be86b91ab20e94811a0c99fe4bf21f6b5d3e79665cd12c67217d6ba72e88e4a8`; Quark latest remains v0.35 until the next `煮元宵`.
+
 ## 0.36
 
 - Changed the Plan tab into a multi-plan CEO orchestration view.

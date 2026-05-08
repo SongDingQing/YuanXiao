@@ -246,6 +246,7 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
                     "plan_ceo_request": True,
                     "plan_reporting_policy": "change_only",
                     "task_queue": True,
+                    "task_queue_scope": "session_chat",
                     "queue_reorder": "queued_only",
                     "async_chat_default": ASYNC_CHAT_DEFAULT,
                     "bridge_timeout_seconds": HERMES_BRIDGE_TIMEOUT_SECONDS,

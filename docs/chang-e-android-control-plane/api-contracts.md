@@ -232,6 +232,14 @@ Response shape:
 
 Returns current Hermes/Codex handoff queue state from local queue files through
 the Mac mini bridge. This path is designed to avoid model quota usage.
+YuanXiao v0.37 uses this data inside a specific Codex session chat page rather
+than as a top-level tab.
+
+Optional filters:
+
+- `session_id`: return tasks linked to the current Codex/a session.
+- `session_title`: fallback text match when a queue item has not stored a
+  session id yet.
 
 Response shape:
 
@@ -242,6 +250,8 @@ Response shape:
     {
       "queue_id": "20260508_120000_abcd1234",
       "short_id": "abcd1234",
+      "codex_session_id": "optional-session-id",
+      "agent_name": "optional-agent-name",
       "status": "queued",
       "status_label": "等待中",
       "position": 1,
@@ -260,6 +270,7 @@ Response shape:
     "running_count": 0
   },
   "quota_cost": "none_file_scan_only",
+  "scope_session_id": "optional-session-id",
   "reorder_supported": true,
   "reorder_scope": "queued_only"
 }

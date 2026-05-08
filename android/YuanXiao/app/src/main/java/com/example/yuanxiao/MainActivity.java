@@ -96,7 +96,6 @@ public class MainActivity extends Activity {
     private static final String TAB_HERMES = "hermes";
     private static final String TAB_CODEX = "codex";
     private static final String TAB_PLAN = "plan";
-    private static final String TAB_QUEUE = "queue";
     private static final String MAIN_CHAT_CONVERSATION = "yuanxiao-change-main";
     private static final int REQUEST_PICK_IMAGE = 1001;
     private static final int REQUEST_POST_NOTIFICATIONS = 1002;
@@ -189,10 +188,14 @@ public class MainActivity extends Activity {
     private final Runnable queuePollRunnable = new Runnable() {
         @Override
         public void run() {
-            if (!queueVisible) {
+            if (!queueVisible && !sessionChatVisible) {
                 return;
             }
-            pollQueueView();
+            if (sessionChatVisible) {
+                pollSessionQueueView();
+            } else {
+                pollQueueView();
+            }
             queueHandler.postDelayed(this, QUEUE_POLL_INTERVAL_MS);
         }
     };
@@ -210,15 +213,18 @@ public class MainActivity extends Activity {
     private TextView planSummary;
     private TextView planUpdated;
     private LinearLayout queueTaskList;
+    private LinearLayout sessionQueuePanel;
+    private LinearLayout sessionQueueTaskList;
     private LinearLayout queueGuidePanel;
     private TextView queueSummary;
+    private TextView sessionQueueSummary;
+    private TextView sessionQueueToggleButton;
     private TextView queueUpdated;
     private TextView queueGuideButton;
     private TextView planCreateAgentButton;
     private TextView hermesTabButton;
     private TextView codexTabButton;
     private TextView planTabButton;
-    private TextView queueTabButton;
     private ScrollView scrollView;
     private LinearLayout messageList;
     private TextView latestMessageButton;
@@ -272,6 +278,7 @@ public class MainActivity extends Activity {
     private boolean planVisible = false;
     private boolean queueVisible = false;
     private boolean queueGuideVisible = true;
+    private boolean sessionQueueExpanded = true;
     private boolean dashboardErrorLogged = false;
     private boolean planErrorLogged = false;
     private boolean queueErrorLogged = false;
@@ -348,6 +355,7 @@ public class MainActivity extends Activity {
         }
         if (sessionChatVisible) {
             syncCurrentSessionMessages(false);
+            pollSessionQueueView();
         }
         if (planVisible) {
             pollPlanView();
@@ -444,14 +452,6 @@ public class MainActivity extends Activity {
                 1f
         ));
 
-        queueView = buildQueueView();
-        queueView.setVisibility(View.GONE);
-        screenRoot.addView(queueView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-        ));
-
         sessionChatView = buildSessionChatView();
         sessionChatView.setVisibility(View.GONE);
         screenRoot.addView(sessionChatView, new LinearLayout.LayoutParams(
@@ -518,7 +518,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.36", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.37", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -826,6 +826,47 @@ public class MainActivity extends Activity {
         header.addView(sessionRenameButton, new LinearLayout.LayoutParams(dp(58), dp(34)));
         headerCard.addView(header, matchWrap());
 
+        sessionQueuePanel = new LinearLayout(this);
+        sessionQueuePanel.setOrientation(LinearLayout.VERTICAL);
+        sessionQueuePanel.setPadding(dp(10), dp(8), dp(10), dp(8));
+        sessionQueuePanel.setBackground(makePanelBackground(Color.WHITE, dp(18), 1, Color.rgb(228, 233, 241)));
+        LinearLayout.LayoutParams queuePanelParams = matchWrap();
+        queuePanelParams.topMargin = dp(8);
+
+        LinearLayout queueHeader = new LinearLayout(this);
+        queueHeader.setOrientation(LinearLayout.HORIZONTAL);
+        queueHeader.setGravity(Gravity.CENTER_VERTICAL);
+
+        sessionQueueToggleButton = makeActionChip("请求队列 ▼", Color.rgb(236, 243, 249), Color.rgb(38, 83, 111));
+        sessionQueueToggleButton.setTextSize(12);
+        sessionQueueToggleButton.setOnClickListener(view -> toggleSessionQueuePanel());
+        queueHeader.addView(sessionQueueToggleButton, new LinearLayout.LayoutParams(dp(96), dp(34)));
+
+        sessionQueueSummary = new TextView(this);
+        sessionQueueSummary.setText("读取当前智能体队列");
+        sessionQueueSummary.setTextSize(12);
+        sessionQueueSummary.setTextColor(Color.rgb(91, 101, 116));
+        sessionQueueSummary.setSingleLine(true);
+        sessionQueueSummary.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams queueSummaryParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        queueSummaryParams.leftMargin = dp(8);
+        queueHeader.addView(sessionQueueSummary, queueSummaryParams);
+
+        TextView queueRefresh = makeActionChip("刷新", Color.rgb(239, 246, 239), Color.rgb(50, 114, 62));
+        queueRefresh.setTextSize(12);
+        queueRefresh.setOnClickListener(view -> pollSessionQueueView());
+        LinearLayout.LayoutParams refreshParams = new LinearLayout.LayoutParams(dp(58), dp(34));
+        refreshParams.leftMargin = dp(8);
+        queueHeader.addView(queueRefresh, refreshParams);
+        sessionQueuePanel.addView(queueHeader, matchWrap());
+
+        sessionQueueTaskList = new LinearLayout(this);
+        sessionQueueTaskList.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams taskListParams = matchWrap();
+        taskListParams.topMargin = dp(8);
+        sessionQueuePanel.addView(sessionQueueTaskList, taskListParams);
+        root.addView(sessionQueuePanel, queuePanelParams);
+
         sessionMessageList = new LinearLayout(this);
         sessionMessageList.setOrientation(LinearLayout.VERTICAL);
         sessionMessageList.setPadding(dp(10), dp(10), dp(10), dp(10));
@@ -929,11 +970,6 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams planParams = weightedHeight(1f, dp(44));
         planParams.leftMargin = dp(8);
         bar.addView(planTabButton, planParams);
-
-        queueTabButton = makeBottomTab("队列", TAB_QUEUE);
-        LinearLayout.LayoutParams queueParams = weightedHeight(1f, dp(44));
-        queueParams.leftMargin = dp(8);
-        bar.addView(queueTabButton, queueParams);
         return bar;
     }
 
@@ -945,8 +981,6 @@ public class MainActivity extends Activity {
                 showDashboard();
             } else if (TAB_PLAN.equals(tab)) {
                 showPlan();
-            } else if (TAB_QUEUE.equals(tab)) {
-                showQueue();
             } else {
                 showChat();
             }
@@ -1232,14 +1266,10 @@ public class MainActivity extends Activity {
         showTopLevelTab(TAB_PLAN);
     }
 
-    private void showQueue() {
-        showTopLevelTab(TAB_QUEUE);
-    }
-
     private void showTopLevelTab(String tab) {
         boolean showCodex = TAB_CODEX.equals(tab);
         boolean showPlan = TAB_PLAN.equals(tab);
-        boolean showQueue = TAB_QUEUE.equals(tab);
+        boolean showQueue = false;
         dashboardVisible = showCodex;
         planVisible = showPlan;
         queueVisible = showQueue;
@@ -1250,9 +1280,6 @@ public class MainActivity extends Activity {
         }
         if (planView != null) {
             planView.setVisibility(showPlan ? View.VISIBLE : View.GONE);
-        }
-        if (queueView != null) {
-            queueView.setVisibility(showQueue ? View.VISIBLE : View.GONE);
         }
         if (sessionChatView != null) {
             sessionChatView.setVisibility(View.GONE);
@@ -1275,12 +1302,7 @@ public class MainActivity extends Activity {
         } else {
             stopPlanPolling();
         }
-        if (showQueue) {
-            startQueuePolling();
-            pollQueueView();
-        } else {
-            stopQueuePolling();
-        }
+        stopQueuePolling();
         updateBottomTabs();
     }
 
@@ -1295,9 +1317,6 @@ public class MainActivity extends Activity {
         if (planView != null) {
             planView.setVisibility(View.GONE);
         }
-        if (queueView != null) {
-            queueView.setVisibility(View.GONE);
-        }
         if (chatView != null) {
             chatView.setVisibility(View.GONE);
         }
@@ -1309,11 +1328,13 @@ public class MainActivity extends Activity {
         }
         stopDashboardPolling();
         stopPlanPolling();
-        stopQueuePolling();
         updateSessionHeader();
+        renderSessionQueueLoading();
         renderCurrentSessionHistory();
         startSessionChatPolling();
+        startQueuePolling();
         syncCurrentSessionMessages(true);
+        pollSessionQueueView();
     }
 
     private void startDashboardPolling() {
@@ -1356,7 +1377,6 @@ public class MainActivity extends Activity {
         styleBottomTab(hermesTabButton, !dashboardVisible && !planVisible && !queueVisible && !sessionChatVisible);
         styleBottomTab(codexTabButton, dashboardVisible || sessionChatVisible);
         styleBottomTab(planTabButton, planVisible);
-        styleBottomTab(queueTabButton, queueVisible);
     }
 
     private void styleBottomTab(TextView button, boolean selected) {
@@ -1414,6 +1434,22 @@ public class MainActivity extends Activity {
         queueTaskList.addView(loading, matchWrap());
     }
 
+    private void renderSessionQueueLoading() {
+        if (sessionQueueSummary != null) {
+            sessionQueueSummary.setText("正在读取当前智能体队列");
+        }
+        if (sessionQueueTaskList == null) {
+            return;
+        }
+        sessionQueueTaskList.removeAllViews();
+        TextView loading = new TextView(this);
+        loading.setText("正在读取请求队列...");
+        loading.setTextSize(12);
+        loading.setTextColor(Color.rgb(91, 101, 116));
+        loading.setPadding(dp(4), dp(4), dp(4), dp(4));
+        sessionQueueTaskList.addView(loading, matchWrap());
+    }
+
     private void pollCodexDashboard() {
         if (dashboardSyncInFlight) {
             return;
@@ -1458,6 +1494,34 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void pollSessionQueueView() {
+        if (queueSyncInFlight || selectedCodexSessionId.isEmpty()) {
+            return;
+        }
+        queueSyncInFlight = true;
+        executor.execute(() -> {
+            try {
+                JSONObject response = getJson(sessionQueueTasksUrl());
+                runOnUiThread(() -> renderSessionQueueTasks(response));
+                queueErrorLogged = false;
+            } catch (Exception exception) {
+                if (!queueErrorLogged) {
+                    queueErrorLogged = true;
+                    appendLogFromWorker("智能体请求队列同步失败：" + exception.getMessage());
+                }
+                runOnUiThread(() -> renderSessionQueueError(exception.getMessage()));
+            } finally {
+                queueSyncInFlight = false;
+            }
+        });
+    }
+
+    private String sessionQueueTasksUrl() throws Exception {
+        String sessionId = URLEncoder.encode(selectedCodexSessionId, StandardCharsets.UTF_8.name());
+        String title = URLEncoder.encode(compactSessionTitle(selectedCodexSessionTitle), StandardCharsets.UTF_8.name());
+        return endpoint("/api/queue/tasks?limit=30&session_id=" + sessionId + "&session_title=" + title);
+    }
+
     private void reorderQueue(String queueId, int direction) {
         if (queueReorderInFlight) {
             return;
@@ -1480,17 +1544,37 @@ public class MainActivity extends Activity {
                 request.put("queue_ids", ids);
                 JSONObject response = postJson(QUEUE_REORDER_URL, request);
                 runOnUiThread(() -> {
-                    renderQueueTasks(response);
+                    if (sessionChatVisible) {
+                        renderSessionQueueTasks(response);
+                    } else {
+                        renderQueueTasks(response);
+                    }
                     appendLog("队列顺序已更新。");
                 });
                 queueErrorLogged = false;
             } catch (Exception exception) {
                 appendLogFromWorker("队列排序失败：" + exception.getMessage());
-                runOnUiThread(this::pollQueueView);
+                runOnUiThread(() -> {
+                    if (sessionChatVisible) {
+                        pollSessionQueueView();
+                    } else {
+                        pollQueueView();
+                    }
+                });
             } finally {
                 queueReorderInFlight = false;
             }
         });
+    }
+
+    private void toggleSessionQueuePanel() {
+        sessionQueueExpanded = !sessionQueueExpanded;
+        if (sessionQueueTaskList != null) {
+            sessionQueueTaskList.setVisibility(sessionQueueExpanded ? View.VISIBLE : View.GONE);
+        }
+        if (sessionQueueToggleButton != null) {
+            sessionQueueToggleButton.setText(sessionQueueExpanded ? "请求队列 ▼" : "请求队列 ▶");
+        }
     }
 
     private void toggleQueueGuide() {
@@ -2070,6 +2154,104 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams params = sessionRowParams();
             queueTaskList.addView(makeQueueTaskCard(task), params);
         }
+    }
+
+    private void renderSessionQueueError(String message) {
+        if (sessionQueueSummary != null) {
+            sessionQueueSummary.setText("暂时无法读取当前智能体队列");
+        }
+        if (sessionQueueTaskList == null) {
+            return;
+        }
+        sessionQueueTaskList.removeAllViews();
+        TextView error = new TextView(this);
+        error.setText("队列读取失败：" + message);
+        error.setTextSize(12);
+        error.setTextColor(Color.rgb(166, 63, 40));
+        error.setPadding(dp(4), dp(4), dp(4), dp(4));
+        sessionQueueTaskList.addView(error, matchWrap());
+    }
+
+    private void renderSessionQueueTasks(JSONObject response) {
+        if (sessionQueueTaskList == null) {
+            return;
+        }
+        sessionQueueTaskList.removeAllViews();
+        lastQueueOrderIds.clear();
+        JSONArray tasks = response.optJSONArray("tasks");
+        List<JSONObject> scopedTasks = new ArrayList<>();
+        if (tasks != null) {
+            for (int i = 0; i < tasks.length(); i++) {
+                JSONObject task = tasks.optJSONObject(i);
+                if (task == null || !queueTaskMatchesCurrentSession(task)) {
+                    continue;
+                }
+                scopedTasks.add(task);
+                if (task.optBoolean("can_reorder", false)) {
+                    lastQueueOrderIds.add(task.optString("queue_id", ""));
+                }
+            }
+        }
+        int running = 0;
+        int queued = 0;
+        for (JSONObject task : scopedTasks) {
+            String status = task.optString("status", "").trim().toLowerCase(Locale.US);
+            if ("running".equals(status)) {
+                running++;
+            } else if ("queued".equals(status)) {
+                queued++;
+            }
+        }
+        if (sessionQueueSummary != null) {
+            sessionQueueSummary.setText(scopedTasks.isEmpty()
+                    ? "当前智能体暂无请求队列"
+                    : running + " 运行 · " + queued + " 等待 · " + scopedTasks.size() + " 条");
+        }
+        if (scopedTasks.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("当前智能体暂无请求队列。");
+            empty.setTextSize(12);
+            empty.setTextColor(Color.rgb(91, 101, 116));
+            empty.setPadding(dp(4), dp(4), dp(4), dp(4));
+            sessionQueueTaskList.addView(empty, matchWrap());
+            return;
+        }
+        for (JSONObject task : scopedTasks) {
+            LinearLayout.LayoutParams params = sessionRowParams();
+            sessionQueueTaskList.addView(makeQueueTaskCard(task), params);
+        }
+    }
+
+    private boolean queueTaskMatchesCurrentSession(JSONObject task) {
+        String sessionId = selectedCodexSessionId == null ? "" : selectedCodexSessionId.trim();
+        String title = compactSessionTitle(selectedCodexSessionTitle).trim().toLowerCase(Locale.US);
+        if (sessionId.isEmpty() && title.isEmpty()) {
+            return false;
+        }
+        String[] directFields = {
+                task.optString("codex_session_id", ""),
+                task.optString("session_id", ""),
+                task.optString("target_session_id", ""),
+                task.optString("thread_id", ""),
+                task.optString("agent_id", "")
+        };
+        for (String field : directFields) {
+            if (!sessionId.isEmpty() && sessionId.equals(field.trim())) {
+                return true;
+            }
+        }
+        String haystack = (
+                task.optString("task_summary", "") + " " +
+                        task.optString("task_preview", "") + " " +
+                        task.optString("source_preview", "") + " " +
+                        task.optString("message", "") + " " +
+                        task.optString("agent_name", "") + " " +
+                        task.optString("conversation_id", "")
+        ).toLowerCase(Locale.US);
+        if (!sessionId.isEmpty() && haystack.contains(sessionId.toLowerCase(Locale.US))) {
+            return true;
+        }
+        return title.length() >= 4 && haystack.contains(title);
     }
 
     private LinearLayout makePlanProjectCard(JSONObject project) {
@@ -2842,6 +3024,9 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.37", "队列移入具体 session 聊天页。"));
+        v0.entries.add(new ReleaseEntry("0.37", "请求队列按当前智能体过滤。"));
+        v0.entries.add(new ReleaseEntry("0.37", "底部移除全局队列 Tab。"));
         v0.entries.add(new ReleaseEntry("0.36", "计划页改为多计划 CEO 编排。"));
         v0.entries.add(new ReleaseEntry("0.36", "新计划会创建专属 CEO。"));
         v0.entries.add(new ReleaseEntry("0.36", "计划汇报由嫦娥统一管理。"));

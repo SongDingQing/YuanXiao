@@ -665,9 +665,21 @@ def normalize_queue_task(raw: dict[str, Any], path: Path) -> dict[str, Any]:
     status = str(raw.get("status") or "queued").strip().lower() or "queued"
     task = str(raw.get("task") or raw.get("source_text") or raw.get("task_summary") or "").strip()
     source_text = str(raw.get("source_text") or "").strip()
+    codex_session_id = str(
+        raw.get("codex_session_id")
+        or raw.get("target_session_id")
+        or raw.get("session_id")
+        or raw.get("thread_id")
+        or ""
+    ).strip()
     return {
         "queue_id": queue_id,
         "short_id": queue_short_id(queue_id),
+        "codex_session_id": codex_session_id,
+        "session_id": codex_session_id,
+        "conversation_id": str(raw.get("conversation_id") or "").strip(),
+        "agent_id": str(raw.get("agent_id") or raw.get("agent_session_id") or "").strip(),
+        "agent_name": compact_queue_text(str(raw.get("agent_name") or raw.get("agent_title") or ""), 48),
         "status": status,
         "status_label": queue_status_label(status),
         "position": safe_int(raw.get("position"), 0),
@@ -684,7 +696,44 @@ def normalize_queue_task(raw: dict[str, Any], path: Path) -> dict[str, Any]:
     }
 
 
-def read_handoff_queue_tasks(limit: int = 30) -> dict[str, Any]:
+def queue_item_matches_session(raw: dict[str, Any], item: dict[str, Any], session_id: str = "", session_title: str = "") -> bool:
+    session_id = str(session_id or "").strip()
+    title = " ".join(str(session_title or "").split()).strip().lower()
+    if not session_id and not title:
+        return True
+    direct_fields = [
+        raw.get("codex_session_id"),
+        raw.get("target_session_id"),
+        raw.get("session_id"),
+        raw.get("thread_id"),
+        raw.get("agent_session_id"),
+        item.get("codex_session_id"),
+        item.get("session_id"),
+        item.get("agent_id"),
+    ]
+    if session_id and any(str(value or "").strip() == session_id for value in direct_fields):
+        return True
+    haystack = " ".join(
+        str(value or "")
+        for value in [
+            raw.get("task"),
+            raw.get("task_summary"),
+            raw.get("source_text"),
+            raw.get("message"),
+            raw.get("conversation_id"),
+            raw.get("agent_name"),
+            raw.get("agent_title"),
+            item.get("task_preview"),
+            item.get("task_summary"),
+            item.get("source_preview"),
+        ]
+    ).lower()
+    if session_id and session_id.lower() in haystack:
+        return True
+    return len(title) >= 4 and title in haystack
+
+
+def read_handoff_queue_tasks(limit: int = 30, session_id: str = "", session_title: str = "") -> dict[str, Any]:
     normalized_limit = max(1, min(MAX_QUEUE_TASKS, limit))
     if not CODEX_HANDOFF_QUEUE_DIR.exists():
         return {
@@ -715,7 +764,10 @@ def read_handoff_queue_tasks(limit: int = 30) -> dict[str, Any]:
             status = str(item.get("status") or "").strip().lower()
             if status in QUEUE_TERMINAL_STATUSES:
                 continue
-            raw_items.append(normalize_queue_task(item, path))
+            normalized = normalize_queue_task(item, path)
+            if not queue_item_matches_session(item, normalized, session_id, session_title):
+                continue
+            raw_items.append(normalized)
     raw_items.sort(key=queue_sort_key)
     tasks = raw_items[:normalized_limit]
     queued_count = sum(1 for item in raw_items if item.get("status") == "queued")
@@ -732,6 +784,8 @@ def read_handoff_queue_tasks(limit: int = 30) -> dict[str, Any]:
         "quota_cost": "none_file_scan_only",
         "scan_cost": "file_scan",
         "scan_errors": scan_errors,
+        "scope_session_id": str(session_id or "").strip(),
+        "scope_session_title": compact_queue_text(str(session_title or ""), 80),
         "reorder_supported": True,
         "reorder_scope": "queued_only",
         "guide": [
@@ -2069,6 +2123,7 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                     "plan_reporting_policy": "change_only",
                     "plan_smoke_test_complete": True,
                     "task_queue": True,
+                    "task_queue_scope": "session_chat",
                     "queue_reorder": "queued_only",
                     "image_input": "enabled",
                     "image_recognition": "change-vision",
@@ -2092,7 +2147,9 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                 limit = max(1, min(MAX_QUEUE_TASKS, int((query.get("limit") or ["30"])[0])))
             except ValueError:
                 limit = 30
-            self._send_json(read_handoff_queue_tasks(limit))
+            session_id = str((query.get("session_id") or [""])[0]).strip()
+            session_title = str((query.get("session_title") or [""])[0]).strip()
+            self._send_json(read_handoff_queue_tasks(limit, session_id=session_id, session_title=session_title))
             return
         if parsed.path == "/api/plan/projects":
             query = urllib.parse.parse_qs(parsed.query)

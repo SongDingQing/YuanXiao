@@ -81,6 +81,12 @@ PLAN_STATE_FILE = Path(os.environ.get("YUANXIAO_PLAN_STATE_FILE", str(Path.home(
 MAX_PLAN_PROJECTS = int(os.environ.get("YUANXIAO_MAX_PLAN_PROJECTS", "50"))
 PLAN_STATE_CACHE: dict[str, Any] = {}
 PLAN_STATE_CACHE_LOCK = threading.Lock()
+CODEX_HANDOFF_QUEUE_DIR = Path(
+    os.environ.get("YUANXIAO_CODEX_HANDOFF_QUEUE_DIR", str(Path.home() / ".hermes/codex-handoff/queue"))
+)
+MAX_QUEUE_TASKS = int(os.environ.get("YUANXIAO_MAX_QUEUE_TASKS", "50"))
+QUEUE_TERMINAL_STATUSES = {"completed", "failed", "canceled", "cancelled"}
+QUEUE_LOCK = threading.Lock()
 
 
 def now_iso() -> str:
@@ -97,6 +103,16 @@ def iso_from_epoch_ms(value: Any) -> str:
     return datetime.fromtimestamp(millis / 1000, timezone.utc).isoformat(timespec="seconds")
 
 
+def iso_from_epoch_seconds(value: Any) -> str:
+    try:
+        seconds = float(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    if seconds <= 0:
+        return ""
+    return datetime.fromtimestamp(seconds, timezone.utc).isoformat(timespec="seconds")
+
+
 def compact_path(path: str) -> str:
     home = str(Path.home())
     if path.startswith(home):
@@ -111,6 +127,10 @@ def compact_preview_text(text: str, limit: int = MAX_CODEX_SESSION_PREVIEW_CHARS
     return value[: max(1, limit - 1)].rstrip() + "…"
 
 
+def compact_queue_text(text: str, limit: int = 160) -> str:
+    return compact_preview_text(str(text or ""), limit)
+
+
 def normalized_progress(value: Any) -> int:
     try:
         progress = float(value or 0)
@@ -119,6 +139,13 @@ def normalized_progress(value: Any) -> int:
     if 0 < progress <= 1:
         progress *= 100
     return max(0, min(100, int(round(progress))))
+
+
+def safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
 
 
 def normalize_plan_person(raw: Any, default_name: str = "未命名") -> dict[str, Any]:
@@ -231,6 +258,181 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
         with PLAN_STATE_CACHE_LOCK:
             PLAN_STATE_CACHE["key"] = cache_key
             PLAN_STATE_CACHE["payload"] = payload
+    return payload
+
+
+def queue_item_path(queue_id: str) -> Path:
+    safe = re.sub(r"[^a-zA-Z0-9_.-]", "_", str(queue_id or "").strip())
+    return CODEX_HANDOFF_QUEUE_DIR / f"{safe}.json"
+
+
+def load_queue_item(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def queue_short_id(queue_id: str) -> str:
+    text = str(queue_id or "").strip()
+    if not text:
+        return ""
+    tail = text.rsplit("_", 1)[-1]
+    return tail[-8:] if len(tail) >= 8 else text[-8:]
+
+
+def queue_status_label(status: str) -> str:
+    normalized = str(status or "").strip().lower()
+    if normalized == "running":
+        return "运行中"
+    if normalized == "queued":
+        return "等待中"
+    if normalized in {"canceled", "cancelled"}:
+        return "已取消"
+    if normalized == "failed":
+        return "失败"
+    if normalized == "completed":
+        return "完成"
+    return normalized or "未知"
+
+
+def queue_sort_key(item: dict[str, Any]) -> tuple[int, int, float, str]:
+    status = str(item.get("status") or "").strip().lower()
+    status_rank = 0 if status == "running" else 1 if status == "queued" else 2
+    position = safe_int(item.get("position"), 9999)
+    queued_at = 0.0
+    try:
+        queued_at = float(item.get("queued_at") or item.get("updated_at") or 0)
+    except (TypeError, ValueError):
+        queued_at = 0.0
+    return status_rank, position, queued_at, str(item.get("queue_id") or "")
+
+
+def normalize_queue_task(raw: dict[str, Any], path: Path) -> dict[str, Any]:
+    queue_id = str(raw.get("queue_id") or path.stem).strip()
+    status = str(raw.get("status") or "queued").strip().lower() or "queued"
+    task = str(raw.get("task") or raw.get("source_text") or raw.get("task_summary") or "").strip()
+    source_text = str(raw.get("source_text") or "").strip()
+    return {
+        "queue_id": queue_id,
+        "short_id": queue_short_id(queue_id),
+        "status": status,
+        "status_label": queue_status_label(status),
+        "position": safe_int(raw.get("position"), 0),
+        "task_summary": compact_queue_text(str(raw.get("task_summary") or task or "未命名任务"), 48),
+        "task_preview": compact_queue_text(task, 160),
+        "source_preview": compact_queue_text(source_text, 120),
+        "project_dir": compact_path(str(raw.get("project_dir") or "")),
+        "platform": str(raw.get("platform_name") or "").strip(),
+        "queued_at": iso_from_epoch_seconds(raw.get("queued_at")),
+        "updated_at": iso_from_epoch_seconds(raw.get("updated_at")),
+        "started_at": iso_from_epoch_seconds(raw.get("started_at")),
+        "message": compact_queue_text(str(raw.get("message") or raw.get("error") or ""), 120),
+        "can_reorder": status == "queued",
+    }
+
+
+def read_handoff_queue_tasks(limit: int = 30) -> dict[str, Any]:
+    normalized_limit = max(1, min(MAX_QUEUE_TASKS, limit))
+    if not CODEX_HANDOFF_QUEUE_DIR.exists():
+        return {
+            "status": "ok",
+            "tasks": [],
+            "summary": {"task_count": 0, "queued_count": 0, "running_count": 0},
+            "queue_dir": compact_path(str(CODEX_HANDOFF_QUEUE_DIR)),
+            "quota_cost": "none_file_scan_only",
+            "scan_cost": "missing_queue_dir",
+            "reorder_supported": True,
+            "reorder_scope": "queued_only",
+            "guide": [
+                "运行中的任务不会被打断。",
+                "等待中的任务可以上移或下移，下一个取任务时生效。",
+                "这个队列来自 Hermes/Codex handoff，不消耗 Codex 模型额度。",
+            ],
+            "time": now_iso(),
+        }
+    raw_items: list[dict[str, Any]] = []
+    scan_errors = 0
+    with QUEUE_LOCK:
+        paths = list(CODEX_HANDOFF_QUEUE_DIR.glob("*.json"))
+        for path in paths:
+            item = load_queue_item(path)
+            if not item:
+                scan_errors += 1
+                continue
+            status = str(item.get("status") or "").strip().lower()
+            if status in QUEUE_TERMINAL_STATUSES:
+                continue
+            raw_items.append(normalize_queue_task(item, path))
+    raw_items.sort(key=queue_sort_key)
+    tasks = raw_items[:normalized_limit]
+    queued_count = sum(1 for item in raw_items if item.get("status") == "queued")
+    running_count = sum(1 for item in raw_items if item.get("status") == "running")
+    return {
+        "status": "ok",
+        "tasks": tasks,
+        "summary": {
+            "task_count": len(raw_items),
+            "queued_count": queued_count,
+            "running_count": running_count,
+        },
+        "queue_dir": compact_path(str(CODEX_HANDOFF_QUEUE_DIR)),
+        "quota_cost": "none_file_scan_only",
+        "scan_cost": "file_scan",
+        "scan_errors": scan_errors,
+        "reorder_supported": True,
+        "reorder_scope": "queued_only",
+        "guide": [
+            "运行中的任务不会被打断。",
+            "等待中的任务可以上移或下移，下一个取任务时生效。",
+            "这个队列来自 Hermes/Codex handoff，不消耗 Codex 模型额度。",
+        ],
+        "time": now_iso(),
+    }
+
+
+def reorder_handoff_queue_tasks(queue_ids: Any) -> dict[str, Any]:
+    if not isinstance(queue_ids, list):
+        raise ValueError("queue_ids_required")
+    requested_ids = [str(item or "").strip() for item in queue_ids]
+    requested_ids = [item for item in requested_ids if item]
+    if len(set(requested_ids)) != len(requested_ids):
+        raise ValueError("duplicate_queue_ids")
+    with QUEUE_LOCK:
+        queued_items: dict[str, tuple[Path, dict[str, Any]]] = {}
+        for path in CODEX_HANDOFF_QUEUE_DIR.glob("*.json"):
+            item = load_queue_item(path)
+            if not item:
+                continue
+            queue_id = str(item.get("queue_id") or path.stem).strip()
+            status = str(item.get("status") or "").strip().lower()
+            if queue_id and status == "queued":
+                queued_items[queue_id] = (path, item)
+        missing = [queue_id for queue_id in requested_ids if queue_id not in queued_items]
+        if missing:
+            raise LookupError(",".join(missing[:5]))
+        remaining = [
+            queue_id
+            for queue_id, (_, item) in sorted(queued_items.items(), key=lambda pair: queue_sort_key(pair[1][1]))
+            if queue_id not in requested_ids
+        ]
+        new_order = requested_ids + remaining
+        changed = 0
+        for index, queue_id in enumerate(new_order, start=1):
+            path, item = queued_items[queue_id]
+            old_position = safe_int(item.get("position"), 0)
+            item["position"] = index
+            item["updated_at"] = time.time()
+            item["message"] = "Reordered from YuanXiao."
+            if old_position != index:
+                changed += 1
+            tmp_path = path.with_suffix(".tmp")
+            tmp_path.write_text(json.dumps(item, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp_path.replace(path)
+    payload = read_handoff_queue_tasks(MAX_QUEUE_TASKS)
+    payload["reordered"] = changed
+    payload["reorder_effect"] = "queued_tasks_next_pick"
     return payload
 
 
@@ -1510,6 +1712,8 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                     "codex_session_create": True,
                     "codex_session_rename": True,
                     "plan_view": True,
+                    "task_queue": True,
+                    "queue_reorder": "queued_only",
                     "image_input": "enabled",
                     "image_recognition": "change-vision",
                     "vision_engine": f"codex-cli:{CODEX_VISION_MODEL}",
@@ -1525,6 +1729,14 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             except ValueError:
                 limit = 20
             self._send_json(read_codex_sessions(limit))
+            return
+        if parsed.path == "/api/queue/tasks":
+            query = urllib.parse.parse_qs(parsed.query)
+            try:
+                limit = max(1, min(MAX_QUEUE_TASKS, int((query.get("limit") or ["30"])[0])))
+            except ValueError:
+                limit = 30
+            self._send_json(read_handoff_queue_tasks(limit))
             return
         if parsed.path == "/api/plan/projects":
             query = urllib.parse.parse_qs(parsed.query)
@@ -1557,7 +1769,12 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path not in {"/api/chat", "/api/codex/session/create", "/api/codex/session/rename"}:
+        if parsed.path not in {
+            "/api/chat",
+            "/api/codex/session/create",
+            "/api/codex/session/rename",
+            "/api/queue/reorder",
+        }:
             self._send_json({"error": "not_found"}, status=404)
             return
 
@@ -1578,6 +1795,37 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             payload = json.loads(raw or "{}")
         except Exception:
             self._send_json({"error": "invalid_json"}, status=400)
+            return
+
+        if parsed.path == "/api/queue/reorder":
+            try:
+                response = reorder_handoff_queue_tasks(payload.get("queue_ids"))
+            except ValueError as exc:
+                self._send_json({"status": "error", "error": str(exc), "time": now_iso()}, status=400)
+                return
+            except LookupError as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "queue_task_not_found_or_not_queued",
+                        "detail": str(exc),
+                        "time": now_iso(),
+                    },
+                    status=404,
+                )
+                return
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "queue_reorder_failed",
+                        "detail": str(exc),
+                        "time": now_iso(),
+                    },
+                    status=500,
+                )
+                return
+            self._send_json(response)
             return
 
         if parsed.path == "/api/codex/session/create":

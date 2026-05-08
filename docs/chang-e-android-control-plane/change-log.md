@@ -1,5 +1,12 @@
 # YuanXiao Change Log
 
+## 0.31
+
+- Added a bottom Queue tab for Hermes/Codex handoff queue sync.
+- Added collapsible queue guide text and queued-only up/down reordering.
+- Added `/api/queue/tasks` and `/api/queue/reorder` through ChangE and the Mac mini bridge.
+- Built and signature-verified local `yuanxiao-0.31.apk`; Quark latest remains v0.30 until the next `煮元宵`.
+
 ## 0.30
 
 - Added bridge-side plan-state cache hits when the plan JSON file is unchanged.

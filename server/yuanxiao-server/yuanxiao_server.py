@@ -203,6 +203,8 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
                     "codex_session_create": True,
                     "codex_session_rename": True,
                     "plan_view": True,
+                    "task_queue": True,
+                    "queue_reorder": "queued_only",
                     "bridge_timeout_seconds": HERMES_BRIDGE_TIMEOUT_SECONDS,
                     "request_socket_timeout_seconds": REQUEST_SOCKET_TIMEOUT_SECONDS,
                     "max_request_bytes": MAX_REQUEST_BYTES,
@@ -266,6 +268,25 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             response.setdefault("time", now_iso())
             self._send_json(response, status=status)
             return
+        if parsed.path == "/api/queue/tasks":
+            try:
+                status, response = forward_bridge_get("/api/queue/tasks", parsed.query)
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "queue_view_unavailable",
+                        "detail": str(exc),
+                        "server": "change",
+                        "time": now_iso(),
+                    },
+                    status=504,
+                )
+                return
+            response["server"] = "change"
+            response.setdefault("time", now_iso())
+            self._send_json(response, status=status)
+            return
         if parsed.path == "/api/codex/session/messages":
             try:
                 status, response = forward_bridge_get("/api/codex/session/messages", parsed.query)
@@ -305,7 +326,7 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             self._send_json({"status": "ok", "message": message, "server": "change", "time": now_iso()})
             return
 
-        if parsed.path in {"/api/codex/session/create", "/api/codex/session/rename"}:
+        if parsed.path in {"/api/codex/session/create", "/api/codex/session/rename", "/api/queue/reorder"}:
             try:
                 payload = self._read_json_payload()
             except ValueError as exc:

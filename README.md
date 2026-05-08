@@ -6,14 +6,14 @@ Native Android client and relay-side source for the private YuanXiao bridge used
 
 - `android/YuanXiao/` - Huawei-installable Android app source.
 - `server/yuanxiao-server/` - ChangE Ubuntu HTTPS relay service source and systemd unit.
-- `bridge/yuanxiao-hermes-bridge/` - Mac mini bridge from ChangE to Hermes, Codex, vision, session dashboard, Codex session chat, and plan-state reads.
+- `bridge/yuanxiao-hermes-bridge/` - Mac mini bridge from ChangE to Hermes, Codex, vision, session dashboard, Codex session chat, plan-state reads, and handoff queue reads.
 - `ops/launchagents/` - Mac mini LaunchAgent definitions for the local bridge and SSH reverse tunnel.
 - `docs/chang-e-android-control-plane/` - durable project docs, workflow notes, changelog, API contracts, and delivery checklist.
 
 ## Current Source Line
 
-- Current app version: `0.30`
-- Delivery APK name: `yuanxiao-0.30.apk`
+- Current app version: `0.31`
+- Latest local APK build: `yuanxiao-0.31.apk`
 - Latest Quark delivery APK: `yuanxiao-0.30.apk`
 - Installed Android app label: `元宵`
 - Public relay: configured locally through `android/YuanXiao/local.properties` and `ops/config/yuanxiao.env`.

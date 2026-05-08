@@ -128,3 +128,55 @@ Response shape:
 
 When the plan state file has not changed, the bridge may return
 `"scan_cost": "cache_hit"`.
+
+## Queue View
+
+`GET /api/queue/tasks?limit=`
+
+Returns current Hermes/Codex handoff queue state from local queue files through
+the Mac mini bridge. This path is designed to avoid model quota usage.
+
+Response shape:
+
+```json
+{
+  "status": "ok",
+  "tasks": [
+    {
+      "queue_id": "20260508_120000_abcd1234",
+      "short_id": "abcd1234",
+      "status": "queued",
+      "status_label": "等待中",
+      "position": 1,
+      "task_summary": "Build task",
+      "task_preview": "Longer task preview",
+      "project_dir": "~/project",
+      "platform": "feishu",
+      "queued_at": "2026-05-08T00:00:00+00:00",
+      "updated_at": "2026-05-08T00:00:00+00:00",
+      "can_reorder": true
+    }
+  ],
+  "summary": {
+    "task_count": 1,
+    "queued_count": 1,
+    "running_count": 0
+  },
+  "quota_cost": "none_file_scan_only",
+  "reorder_supported": true,
+  "reorder_scope": "queued_only"
+}
+```
+
+`POST /api/queue/reorder`
+
+Updates queued-task positions. Running, completed, failed, or canceled tasks are
+not reordered or interrupted.
+
+Request shape:
+
+```json
+{
+  "queue_ids": ["20260508_120000_abcd1234", "20260508_120010_efgh5678"]
+}
+```

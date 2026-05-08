@@ -468,7 +468,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.29", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.30", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -2106,6 +2106,8 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.30", "计划状态读取增加缓存命中优化。"));
+        v0.entries.add(new ReleaseEntry("0.30", "计划页持续刷新减少重复文件读取。"));
         v0.entries.add(new ReleaseEntry("0.29", "底部新增 Hermes、Codex、计划三 Tab。"));
         v0.entries.add(new ReleaseEntry("0.29", "计划视图可读取异步 Agent 项目状态。"));
         v0.entries.add(new ReleaseEntry("0.29", "新增独立计划调度状态脚本。"));

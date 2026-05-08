@@ -121,6 +121,10 @@ Response shape:
     "active_agents": 1,
     "blocked_agents": 0
   },
-  "quota_cost": "none_file_scan_only"
+  "quota_cost": "none_file_scan_only",
+  "scan_cost": "file_read"
 }
 ```
+
+When the plan state file has not changed, the bridge may return
+`"scan_cost": "cache_hit"`.

@@ -1,5 +1,11 @@
 # YuanXiao Change Log
 
+## 0.30
+
+- Added bridge-side plan-state cache hits when the plan JSON file is unchanged.
+- Bumped the delivery APK version to `yuanxiao-0.30.apk`.
+- Built, signature-verified, smoke-tested, and uploaded `yuanxiao-0.30.apk` to the existing Quark `元宵` folder.
+
 ## 0.29
 
 - Reworked the top-level Android navigation into bottom Hermes, Codex, and Plan tabs.

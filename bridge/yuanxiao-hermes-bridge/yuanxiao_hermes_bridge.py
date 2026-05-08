@@ -79,6 +79,8 @@ BRIDGE_REQUEST_LOG = Path(os.environ.get("YUANXIAO_BRIDGE_REQUEST_LOG", str(BRID
 BRIDGE_REQUEST_LOG_MAX_BYTES = int(os.environ.get("YUANXIAO_BRIDGE_REQUEST_LOG_MAX_BYTES", "1048576"))
 PLAN_STATE_FILE = Path(os.environ.get("YUANXIAO_PLAN_STATE_FILE", str(Path.home() / ".yuanxiao/plan-state.json")))
 MAX_PLAN_PROJECTS = int(os.environ.get("YUANXIAO_MAX_PLAN_PROJECTS", "50"))
+PLAN_STATE_CACHE: dict[str, Any] = {}
+PLAN_STATE_CACHE_LOCK = threading.Lock()
 
 
 def now_iso() -> str:
@@ -137,6 +139,7 @@ def normalize_plan_person(raw: Any, default_name: str = "未命名") -> dict[str
 
 
 def read_plan_projects(limit: int = 30) -> dict[str, Any]:
+    normalized_limit = max(1, min(MAX_PLAN_PROJECTS, limit))
     if not PLAN_STATE_FILE.exists():
         return {
             "status": "ok",
@@ -150,8 +153,19 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
             "updated_at": "",
             "state_file": compact_path(str(PLAN_STATE_FILE)),
             "quota_cost": "none_file_scan_only",
+            "scan_cost": "missing_state_file",
             "time": now_iso(),
         }
+    try:
+        stat = PLAN_STATE_FILE.stat()
+        cache_key = f"{PLAN_STATE_FILE}:{stat.st_mtime_ns}:{stat.st_size}:{normalized_limit}"
+        with PLAN_STATE_CACHE_LOCK:
+            cached_key = str(PLAN_STATE_CACHE.get("key") or "")
+            cached_payload = PLAN_STATE_CACHE.get("payload")
+            if cached_key == cache_key and isinstance(cached_payload, dict):
+                return {**cached_payload, "scan_cost": "cache_hit", "time": now_iso()}
+    except Exception:
+        cache_key = ""
     try:
         data = json.loads(PLAN_STATE_FILE.read_text(encoding="utf-8") or "{}")
     except Exception as exc:
@@ -167,6 +181,7 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
                 "blocked_agents": 0,
             },
             "quota_cost": "none_file_scan_only",
+            "scan_cost": "read_error",
             "time": now_iso(),
         }
 
@@ -175,7 +190,7 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
     agent_count = 0
     active_agents = 0
     blocked_agents = 0
-    for index, raw_project in enumerate(raw_projects[: max(1, min(MAX_PLAN_PROJECTS, limit))]):
+    for index, raw_project in enumerate(raw_projects[:normalized_limit]):
         if not isinstance(raw_project, dict):
             continue
         agents = [
@@ -197,7 +212,7 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
         }
         projects.append(project)
 
-    return {
+    payload = {
         "status": "ok",
         "projects": projects,
         "summary": {
@@ -209,8 +224,14 @@ def read_plan_projects(limit: int = 30) -> dict[str, Any]:
         "updated_at": str(data.get("updated_at") or "").strip(),
         "state_file": compact_path(str(PLAN_STATE_FILE)),
         "quota_cost": "none_file_scan_only",
+        "scan_cost": "file_read",
         "time": now_iso(),
     }
+    if cache_key:
+        with PLAN_STATE_CACHE_LOCK:
+            PLAN_STATE_CACHE["key"] = cache_key
+            PLAN_STATE_CACHE["payload"] = payload
+    return payload
 
 
 def last_visible_session_preview(session_id: str, rollout_path: str, fallback: str = "") -> str:

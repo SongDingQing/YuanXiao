@@ -1,5 +1,14 @@
 # YuanXiao Change Log
 
+## 0.41
+
+- Optimized the `煮元宵` session-history path so initial Codex-session sync no longer forces a full chat re-render when nothing changed.
+- Keeps local session history on screen and only appends newly returned messages unless a full render is required.
+- Bumped the delivery APK to `yuanxiao-0.41.apk`.
+- Built and signature-verified `yuanxiao-0.41.apk`; SHA256 `1f75842ab3505827c5f535e9363de84036cd8768a6eedb96c8c40e5988e1979b`.
+- Public session-history smoke test returned `status=ok`, `source=codex-session-log`, `quota_cost=none_file_scan_only`, and 3 messages.
+- Quark upload, GitHub push, and Feishu/Yutu reminder are part of this `煮元宵` delivery.
+
 ## 0.40
 
 - Codex-session async receipt text is no longer inserted as a ChangE chat bubble.

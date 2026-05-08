@@ -506,7 +506,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.40", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.41", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -1834,7 +1834,7 @@ public class MainActivity extends Activity {
                         updateSessionHeader();
                     }
                     SessionMergeResult result = mergeSessionMessagesFromJson(sessionId, messages);
-                    if (result.needsFullRender || initialLoad) {
+                    if (result.needsFullRender || shouldRenderInitialSessionSync(initialLoad, result)) {
                         renderCurrentSessionHistory();
                     } else if (!result.appendedMessages.isEmpty()) {
                         appendSessionRenderedMessages(result.appendedMessages);
@@ -1859,6 +1859,13 @@ public class MainActivity extends Activity {
                 sessionSyncInFlight = false;
             }
         });
+    }
+
+    private boolean shouldRenderInitialSessionSync(boolean initialLoad, SessionMergeResult result) {
+        if (!initialLoad) {
+            return false;
+        }
+        return result.changed && (result.appendedMessages.isEmpty() || sessionChatRecords.isEmpty());
     }
 
     private String buildSessionMessagesUrl(String sessionId, boolean initialLoad) throws Exception {
@@ -2914,6 +2921,9 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.41", "煮元宵优化 session 初始同步重绘。"));
+        v0.entries.add(new ReleaseEntry("0.41", "无新增历史时不再整页刷新聊天。"));
+        v0.entries.add(new ReleaseEntry("0.41", "长 session 打开和同步更稳。"));
         v0.entries.add(new ReleaseEntry("0.40", "Codex session 不再插入嫦娥回执气泡。"));
         v0.entries.add(new ReleaseEntry("0.40", "后台完成提示改为状态栏和通知。"));
         v0.entries.add(new ReleaseEntry("0.40", "session 对话流只保留真实对话。"));

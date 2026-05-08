@@ -33,6 +33,10 @@ Codex session body:
 }
 ```
 
+Codex, Codex-session, and image requests run asynchronously by default. The
+immediate response includes `async=true`, `task_id`, and a short receipt; the
+final answer is delivered through `/api/inbox`.
+
 Image body:
 
 ```json
@@ -144,7 +148,8 @@ Request shape:
   "name": "测试 Agent",
   "role": "Agent",
   "current_task": "等待主人分配任务。",
-  "status": "queued"
+  "status": "queued",
+  "smoke_test": true
 }
 ```
 
@@ -160,8 +165,8 @@ Response shape:
   "agent": {
     "id": "agent-id",
     "name": "测试 Agent",
-    "status": "queued",
-    "progress": 0
+    "status": "completed",
+    "progress": 100
   }
 }
 ```

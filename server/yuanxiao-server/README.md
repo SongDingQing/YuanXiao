@@ -28,7 +28,7 @@ Endpoints:
 - `GET /api/queue/tasks?limit=` forwards to the Mac mini bridge and returns Hermes/Codex handoff queue state from local queue files. This is file scanning, not a model call.
 - `POST /api/queue/reorder` forwards queued-task ordering changes to the Mac mini bridge. Running tasks are not interrupted.
 - `POST /api/chat` with JSON body `{"message":"...","target":"hermes"}` for daily Hermes replies.
-- `POST /api/chat` with JSON body `{"message":"...","target":"codex"}` for Codex professional replies.
+- `POST /api/chat` with JSON body `{"message":"...","target":"codex"}` for Codex professional replies. Codex, Codex-session, and image requests run asynchronously by default; the relay returns an immediate `async=true` receipt and queues the final answer into `/api/inbox`.
 - `POST /api/chat` with image body:
 
 ```json
@@ -42,8 +42,8 @@ Endpoints:
 
 The service listens on the configured HTTPS port and uses a YuanXiao-specific CA bundled into the Android app.
 Current relay request body limit is 6,000,000 bytes to avoid Android large image uploads surfacing as `software caused connection abort`.
-Image requests and Codex text requests use a chunked keep-alive response while Codex is running, so mobile networks do not close the HTTPS connection before the final JSON reply arrives.
-If the phone still disconnects during a long Codex run, ChangE waits for the bridge result in the background and queues the final reply into the YuanXiao inbox so the APK can receive it on the next inbox poll.
+Image requests and Codex text requests default to async mode to avoid mobile HTTPS sockets staying open during long Codex runs. Set `"async": false` in the request or `YUANXIAO_ASYNC_CHAT_DEFAULT=0` in the relay environment to use the older chunked keep-alive response mode.
+If the phone disconnects during a long non-async Codex run, ChangE still waits for the bridge result in the background and queues the final reply into the YuanXiao inbox so the APK can receive it on the next inbox poll.
 Short JSON responses explicitly close the HTTPS connection to avoid long-lived idle sockets showing up as later read-timeout noise.
 
 The Hermes API key stays on the Mac mini in the Hermes env file. It is not copied to the ChangE server.

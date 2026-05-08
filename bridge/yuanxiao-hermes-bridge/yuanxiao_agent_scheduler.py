@@ -42,6 +42,55 @@ def normalized_progress(value: str | int | float | None) -> int:
     return max(0, min(100, int(round(progress))))
 
 
+def is_done(status: str) -> bool:
+    return str(status or "").strip().lower() in {"done", "completed", "complete"}
+
+
+def is_running(status: str) -> bool:
+    return str(status or "").strip().lower() in {"active", "running", "review"}
+
+
+def is_blocked(status: str) -> bool:
+    return str(status or "").strip().lower() in {"blocked", "failed"}
+
+
+def should_count_ceo(ceo: dict[str, Any]) -> bool:
+    status = str(ceo.get("status") or "queued").strip().lower() or "queued"
+    return (
+        status not in {"queued", "waiting"}
+        or normalized_progress(ceo.get("progress", 0)) > 0
+        or bool(str(ceo.get("current_task") or "").strip())
+        or bool(str(ceo.get("last_report") or "").strip())
+    )
+
+
+def recompute_project(project: dict[str, Any]) -> None:
+    people: list[dict[str, Any]] = []
+    agents = project.get("agents")
+    if isinstance(agents, list):
+        people.extend(agent for agent in agents if isinstance(agent, dict))
+    ceo = project.get("ceo")
+    if isinstance(ceo, dict) and (not people or should_count_ceo(ceo)):
+        people.append(ceo)
+    if not people:
+        project["progress"] = normalized_progress(project.get("progress", 0))
+        project["status"] = str(project.get("status") or "queued").strip().lower() or "queued"
+        return
+    progresses = [normalized_progress(person.get("progress", 0)) for person in people]
+    project["progress"] = int(round(sum(progresses) / max(1, len(progresses))))
+    statuses = [str(person.get("status") or "queued").strip().lower() or "queued" for person in people]
+    if statuses and all(is_done(status) for status in statuses):
+        project["status"] = "completed"
+        project["progress"] = 100
+    elif any(is_blocked(status) for status in statuses):
+        project["status"] = "blocked"
+    elif any(is_running(status) for status in statuses):
+        project["status"] = "running"
+    else:
+        project["status"] = "queued"
+    project["updated_at"] = now_iso()
+
+
 def load_state() -> dict[str, Any]:
     if not STATE_FILE.exists():
         return {"schema_version": 1, "updated_at": now_iso(), "projects": [], "events": []}
@@ -146,6 +195,7 @@ def cmd_add_agent(args: argparse.Namespace) -> None:
             "updated_at": now_iso(),
         }
     )
+    recompute_project(project)
     append_event(state, "agent_added", project_id=args.project_id, agent_id=agent_id, name=args.name)
     save_state(state)
     print(agent_id)
@@ -161,7 +211,7 @@ def cmd_update_agent(args: argparse.Namespace) -> None:
         agent["last_report"] = bounded_text(args.report)
         project["last_report"] = bounded_text(f"{agent.get('name')}: {args.report}")
     agent["updated_at"] = now_iso()
-    project["updated_at"] = now_iso()
+    recompute_project(project)
     append_event(state, "agent_updated", project_id=args.project_id, agent_id=args.agent_id, status=args.status)
     save_state(state)
     print(args.agent_id)
@@ -179,6 +229,7 @@ def cmd_report(args: argparse.Namespace) -> None:
         ceo["status"] = args.status
         ceo["progress"] = normalized_progress(args.progress)
         ceo["updated_at"] = now_iso()
+    recompute_project(project)
     append_event(state, "project_report", project_id=args.project_id, from_role=args.from_role, text=report)
     save_state(state)
     print(args.project_id)

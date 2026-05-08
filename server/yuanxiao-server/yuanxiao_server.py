@@ -33,6 +33,7 @@ INBOX_FILE = Path(os.environ.get("YUANXIAO_INBOX_FILE", "/opt/yuanxiao/data/app_
 MAX_INBOX_MESSAGES = int(os.environ.get("YUANXIAO_MAX_INBOX_MESSAGES", "200"))
 ADMIN_TOKEN = os.environ.get("YUANXIAO_ADMIN_TOKEN", "").strip()
 INBOX_LOCK = threading.Lock()
+ASYNC_CHAT_DEFAULT = os.environ.get("YUANXIAO_ASYNC_CHAT_DEFAULT", "1").strip().lower() not in {"0", "false", "no"}
 
 
 def now_iso() -> str:
@@ -89,6 +90,8 @@ def append_inbox_message(payload: dict[str, object]) -> dict[str, object]:
         "source": str(payload.get("source") or "change"),
         "format": str(payload.get("format") or "markdown"),
     }
+    if payload.get("task_id"):
+        message["task_id"] = str(payload.get("task_id") or "")
     if images:
         message["images"] = images
     if files:
@@ -112,6 +115,41 @@ def inbox_messages_after(after_id: str, limit: int) -> list[dict[str, object]]:
             if str(item.get("id") or "") == after_id:
                 return messages[index + 1:index + 1 + limit]
     return messages[-limit:]
+
+
+def payload_bool(payload: dict[str, object], key: str, default: bool) -> bool:
+    if key not in payload:
+        return default
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def normalized_chat_target(payload: dict[str, object], has_image: bool) -> str:
+    if has_image:
+        return "codex"
+    target = str(payload.get("target") or payload.get("route") or "hermes").strip().lower()
+    return "codex" if target == "codex" else "hermes"
+
+
+def should_run_chat_async(payload: dict[str, object], has_image: bool) -> bool:
+    if not payload_bool(payload, "async", ASYNC_CHAT_DEFAULT):
+        return False
+    if has_image:
+        return True
+    if str(payload.get("codex_session_id") or "").strip():
+        return True
+    return normalized_chat_target(payload, has_image) == "codex"
+
+
+def new_chat_task_id() -> str:
+    return f"chat_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
 
 
 def forward_to_hermes_bridge(payload: dict[str, object], conversation: str) -> tuple[int, dict[str, object]]:
@@ -206,6 +244,7 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
                     "plan_agent_create": True,
                     "task_queue": True,
                     "queue_reorder": "queued_only",
+                    "async_chat_default": ASYNC_CHAT_DEFAULT,
                     "bridge_timeout_seconds": HERMES_BRIDGE_TIMEOUT_SECONDS,
                     "request_socket_timeout_seconds": REQUEST_SOCKET_TIMEOUT_SECONDS,
                     "max_request_bytes": MAX_REQUEST_BYTES,
@@ -365,6 +404,9 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "empty_message"}, status=400)
             return
         conversation = str(payload.get("conversation") or "yuanxiao-app").strip() or "yuanxiao-app"
+        if should_run_chat_async(payload, has_image):
+            self._send_bridge_response_async(payload, conversation, message)
+            return
         self._send_bridge_response_keepalive(payload, conversation, message)
 
     def _read_json_payload(self) -> dict[str, object]:
@@ -393,6 +435,84 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             pass
         supplied = self.headers.get("X-YuanXiao-Admin-Token", "").strip()
         return bool(ADMIN_TOKEN and supplied and supplied == ADMIN_TOKEN)
+
+    def _send_bridge_response_async(
+        self,
+        payload: dict[str, object],
+        conversation: str,
+        message: str,
+    ) -> None:
+        task_id = new_chat_task_id()
+        client_ip = self.client_address[0] if self.client_address else ""
+        target = normalized_chat_target(payload, bool(str(payload.get("image_base64") or "").strip()))
+        codex_session_id = str(payload.get("codex_session_id") or "").strip()
+        started = time.monotonic()
+        log_event(
+            "chat_async_accepted",
+            task_id=task_id,
+            client_ip=client_ip,
+            target=target,
+            codex_session_id=codex_session_id,
+            conversation=conversation,
+            message_chars=len(message),
+            has_image=bool(str(payload.get("image_base64") or "").strip()),
+        )
+
+        def worker() -> None:
+            try:
+                status, response = forward_to_hermes_bridge(payload, conversation)
+            except Exception as exc:
+                status, response = (
+                    504,
+                    {
+                        "status": "error",
+                        "error": "hermes_bridge_unavailable",
+                        "detail": str(exc),
+                        "reply": "嫦娥后台处理这次请求时没有拿到回复，请稍后重试。",
+                        "time": now_iso(),
+                    },
+                )
+            response["task_id"] = task_id
+            response["server"] = "change"
+            response["upstream_status"] = status
+            response.setdefault("received", message)
+            response.setdefault("time", now_iso())
+            response.setdefault("relay_duration_ms", int((time.monotonic() - started) * 1000))
+            self._enqueue_async_chat_reply(payload, conversation, status, response, started, reason="async_complete")
+            log_event(
+                "chat_async_finish",
+                task_id=task_id,
+                target=target,
+                codex_session_id=codex_session_id,
+                conversation=conversation,
+                upstream_status=status,
+                duration_ms=response.get("relay_duration_ms"),
+                error=response.get("error", ""),
+            )
+
+        threading.Thread(target=worker, daemon=True).start()
+        reply = "嫦娥已收到，已转入后台处理；完成后会在元宵里通知。"
+        if codex_session_id:
+            reply = "嫦娥已收到，已转入后台处理；完成后会提醒你回到这个 Codex session 查看。"
+        elif str(payload.get("image_base64") or "").strip():
+            reply = "嫦娥已收到图片，识图已转入后台处理；完成后会在元宵里通知。"
+        self._send_json(
+            {
+                "status": "ok",
+                "async": True,
+                "task_id": task_id,
+                "source": "change-async-chat",
+                "target": target,
+                "route": target,
+                "capability": "async-chat",
+                "received": message,
+                "received_image": bool(str(payload.get("image_base64") or "").strip()),
+                "reply": reply,
+                "conversation": conversation,
+                "codex_session_id": codex_session_id if target == "codex" else "",
+                "time": now_iso(),
+            }
+        )
 
     def _send_bridge_response_keepalive(
         self,
@@ -498,6 +618,11 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
         if not reply:
             detail = str(response.get("detail") or response.get("error") or "unknown_error")
             reply = f"嫦娥处理这次请求时没有拿到完整回复：{detail}"
+        codex_session_id = str(payload.get("codex_session_id") or "").strip()
+        if codex_session_id and int(status) < 400:
+            reply = "Codex session 后台回复已完成，请打开对应会话查看最新内容。"
+        elif codex_session_id:
+            reply = f"Codex session 后台请求失败：{reply}"
         inbox_payload: dict[str, object] = {
             "speaker": "嫦娥",
             "text": reply,
@@ -505,9 +630,11 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             "source": "change-async-chat",
             "format": "markdown",
         }
+        if response.get("task_id"):
+            inbox_payload["task_id"] = response.get("task_id")
         for key in ("images", "files", "attachments", "links"):
             value = response.get(key)
-            if isinstance(value, list) and value:
+            if isinstance(value, list) and value and not codex_session_id:
                 inbox_payload[key] = value
         try:
             message = append_inbox_message(inbox_payload)

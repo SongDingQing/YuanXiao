@@ -1,5 +1,14 @@
 # YuanXiao Change Log
 
+## 0.33
+
+- Changed Codex, Codex-session, and image chat requests to async relay mode by default.
+- Added immediate Android delivery status for background chat tasks.
+- Queues final async replies through the YuanXiao inbox so phone HTTPS timeouts do not drop the answer.
+- Keeps Codex-session completion notices in the dedicated session flow instead of the main ChangE chat.
+- Marks Plan-tab smoke-test Agents completed and recomputes project progress from current Agent state.
+- Built and signature-verified local `yuanxiao-0.33.apk`; SHA256 `7038a9589c6ab7254d7d75c086be35129266ddaf4335e0cd590dd3064eb9fc9f`; Quark latest remains v0.32 until the next `煮元宵`.
+
 ## 0.32
 
 - Added Plan-tab Agent creation from the Android app.

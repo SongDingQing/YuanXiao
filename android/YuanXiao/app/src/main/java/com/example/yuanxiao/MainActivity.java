@@ -512,7 +512,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.32", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.33", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -1547,6 +1547,10 @@ public class MainActivity extends Activity {
                 request.put("role", "Agent");
                 request.put("current_task", "等待主人分配任务。");
                 request.put("status", "queued");
+                if (name.contains("测试")) {
+                    request.put("smoke_test", true);
+                    request.put("current_task", "验证计划页新建 Agent 功能。");
+                }
                 JSONObject response = postJson(PLAN_AGENT_CREATE_URL, request);
                 if (!"ok".equals(response.optString("status"))) {
                     throw new IllegalStateException(response.optString("error", "plan_agent_create_failed"));
@@ -2617,6 +2621,8 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.33", "Codex 长请求改为后台任务回传。"));
+        v0.entries.add(new ReleaseEntry("0.33", "测试计划创建后会完成进度。"));
         v0.entries.add(new ReleaseEntry("0.32", "计划页可直接新建测试 Agent。"));
         v0.entries.add(new ReleaseEntry("0.32", "无计划时会自动创建测试计划。"));
         v0.entries.add(new ReleaseEntry("0.31", "新增 handoff 队列同步页面。"));
@@ -3027,6 +3033,7 @@ public class MainActivity extends Activity {
         }
         String speaker = message.optString("speaker", "嫦娥");
         String text = message.optString("text", "");
+        String conversation = message.optString("conversation", "");
         List<MessageAttachment> attachments = attachmentsFromMessage(message);
         if (text.trim().isEmpty() && attachments.isEmpty()) {
             lastInboxMessageId = id;
@@ -3036,6 +3043,17 @@ public class MainActivity extends Activity {
         lastInboxMessageId = id;
         saveLastInboxMessageId();
         runOnUiThread(() -> {
+            if (conversation.startsWith("codex-session-")) {
+                String sessionId = conversation.substring("codex-session-".length()).trim();
+                appendLog("Codex session 后台任务已完成。");
+                if (!sessionId.isEmpty() && sessionId.equals(selectedCodexSessionId)) {
+                    appendSessionTextMessage(sessionId, speaker, text, false, null, attachments);
+                    setSessionDeliveryReplied();
+                    syncCurrentSessionMessages(false);
+                }
+                showIncomingNotification("Codex session 后台回复", text.isEmpty() ? "后台任务已完成" : text, hasImageAttachment(attachments));
+                return;
+            }
             appendTextMessage(speaker, text, false, null, attachments);
             appendLog("收到嫦娥主动下发消息。");
             showIncomingNotification("嫦娥主动消息", text.isEmpty() ? "收到附件消息" : text, hasImageAttachment(attachments));
@@ -3433,6 +3451,15 @@ public class MainActivity extends Activity {
 
     private void handleChatResponse(JSONObject response) throws Exception {
         String reply = response.optString("reply", "收到。");
+        if (response.optBoolean("async", false)) {
+            String taskId = response.optString("task_id", "");
+            appendLogFromWorker(taskId.isEmpty() ? "嫦娥已转入后台处理。" : "嫦娥后台任务：" + taskId);
+            runOnUiThread(() -> {
+                appendTextMessage("嫦娥", reply, false, null, new ArrayList<>());
+                setDeliveryBackground();
+            });
+            return;
+        }
         if (response.optBoolean("received_image", false)) {
             appendLogFromWorker("嫦娥识图完成。");
         }
@@ -3520,6 +3547,15 @@ public class MainActivity extends Activity {
 
     private void handleSessionChatResponse(String sessionId, JSONObject response) throws Exception {
         String reply = response.optString("reply", "收到。");
+        if (response.optBoolean("async", false)) {
+            String taskId = response.optString("task_id", "");
+            appendLogFromWorker(taskId.isEmpty() ? "Codex session 已转入后台处理。" : "Codex session 后台任务：" + taskId);
+            runOnUiThread(() -> {
+                appendSessionTextMessage(sessionId, "嫦娥", reply, false, null, new ArrayList<>());
+                setSessionDeliveryBackground();
+            });
+            return;
+        }
         List<MessageAttachment> attachments = attachmentsFromJson(response.optJSONArray("files"));
         attachments.addAll(attachmentsFromJson(response.optJSONArray("attachments")));
         JSONArray images = response.optJSONArray("images");
@@ -3775,6 +3811,10 @@ public class MainActivity extends Activity {
         setDeliveryStatus("嫦娥已回复", Color.rgb(232, 246, 236), Color.rgb(42, 123, 70));
     }
 
+    private void setDeliveryBackground() {
+        setDeliveryStatus("后台处理中，完成后通知", Color.rgb(231, 241, 255), Color.rgb(31, 96, 164));
+    }
+
     private void setDeliveryFailed() {
         setDeliveryStatus("发送失败，点击日志查看", Color.rgb(255, 238, 235), Color.rgb(163, 55, 43));
     }
@@ -3813,6 +3853,10 @@ public class MainActivity extends Activity {
 
     private void setSessionDeliveryReplied() {
         setSessionDeliveryStatus("Session 已回复", Color.rgb(232, 246, 236), Color.rgb(42, 123, 70));
+    }
+
+    private void setSessionDeliveryBackground() {
+        setSessionDeliveryStatus("后台处理中，完成后同步", Color.rgb(231, 241, 255), Color.rgb(31, 96, 164));
     }
 
     private void setSessionDeliveryFailed() {

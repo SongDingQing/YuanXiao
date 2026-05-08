@@ -146,6 +146,12 @@ def normalized_progress(value: Any) -> int:
     return max(0, min(100, int(round(progress))))
 
 
+def truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(float(value))
@@ -303,11 +309,67 @@ def append_plan_event(state: dict[str, Any], event: str, **fields: Any) -> None:
     del events[:-200]
 
 
+def is_plan_done(status: Any) -> bool:
+    return str(status or "").strip().lower() in {"done", "completed", "complete"}
+
+
+def is_plan_running(status: Any) -> bool:
+    return str(status or "").strip().lower() in {"active", "running", "review"}
+
+
+def is_plan_blocked(status: Any) -> bool:
+    return str(status or "").strip().lower() in {"blocked", "failed"}
+
+
+def should_count_plan_ceo(ceo: dict[str, Any]) -> bool:
+    status = str(ceo.get("status") or "queued").strip().lower() or "queued"
+    return (
+        status not in {"queued", "waiting"}
+        or normalized_progress(ceo.get("progress", 0)) > 0
+        or bool(str(ceo.get("current_task") or "").strip())
+        or bool(str(ceo.get("last_report") or "").strip())
+    )
+
+
+def recompute_plan_project(project: dict[str, Any]) -> None:
+    people: list[dict[str, Any]] = []
+    agents = project.get("agents")
+    if isinstance(agents, list):
+        people.extend(agent for agent in agents if isinstance(agent, dict))
+    ceo = project.get("ceo")
+    if isinstance(ceo, dict) and (not people or should_count_plan_ceo(ceo)):
+        people.append(ceo)
+    if not people:
+        project["progress"] = normalized_progress(project.get("progress", 0))
+        project["status"] = str(project.get("status") or "queued").strip().lower() or "queued"
+        return
+    progresses = [normalized_progress(person.get("progress", 0)) for person in people]
+    project["progress"] = int(round(sum(progresses) / max(1, len(progresses))))
+    statuses = [str(person.get("status") or "queued").strip().lower() or "queued" for person in people]
+    if statuses and all(is_plan_done(status) for status in statuses):
+        project["status"] = "completed"
+        project["progress"] = 100
+    elif any(is_plan_blocked(status) for status in statuses):
+        project["status"] = "blocked"
+    elif any(is_plan_running(status) for status in statuses):
+        project["status"] = "running"
+    else:
+        project["status"] = "queued"
+    project["updated_at"] = now_iso()
+
+
+def is_smoke_test_agent(payload: dict[str, Any], name: str, current_task: str) -> bool:
+    if truthy(payload.get("smoke_test")):
+        return True
+    text = f"{name} {current_task}"
+    return "测试" in text and ("验证" in text or "计划页" in text)
+
+
 def default_plan_project(title: str = "元宵测试计划") -> dict[str, Any]:
     return {
         "id": f"plan-{uuid.uuid4().hex[:8]}",
         "title": bounded_plan_text(title or "元宵测试计划", 80),
-        "status": "running",
+        "status": "queued",
         "progress": 0,
         "last_report": "等待 Agent 汇报。",
         "updated_at": now_iso(),
@@ -355,6 +417,12 @@ def create_plan_agent(payload: dict[str, Any]) -> dict[str, Any]:
     status = str(payload.get("status") or "queued").strip().lower() or "queued"
     if status not in {"queued", "running", "active", "waiting", "blocked", "review", "done", "completed"}:
         status = "queued"
+    progress = normalized_progress(payload.get("progress", 0))
+    last_report = bounded_plan_text(payload.get("last_report") or "新 Agent 已创建。", 180)
+    if is_smoke_test_agent(payload, name, current_task):
+        status = "completed"
+        progress = 100
+        last_report = "计划页创建测试已完成。"
     with PLAN_STATE_LOCK:
         state = load_plan_state_for_write()
         project, created_project = find_writable_plan_project(
@@ -372,17 +440,15 @@ def create_plan_agent(payload: dict[str, Any]) -> dict[str, Any]:
             "role": role,
             "session_id": session_id,
             "status": status,
-            "progress": normalized_progress(payload.get("progress", 0)),
+            "progress": progress,
             "current_task": current_task,
-            "last_report": bounded_plan_text(payload.get("last_report") or "新 Agent 已创建。", 180),
+            "last_report": last_report,
             "created_at": now_iso(),
             "updated_at": now_iso(),
         }
         agents.insert(0, agent)
-        project["updated_at"] = now_iso()
-        if str(project.get("status") or "queued").lower() == "queued":
-            project["status"] = "running"
-        project["last_report"] = bounded_plan_text(f"{name} 已加入计划。", 180)
+        project["last_report"] = bounded_plan_text(f"{name}：{last_report}", 180)
+        recompute_plan_project(project)
         append_plan_event(
             state,
             "agent_created_by_yuanxiao",
@@ -1856,6 +1922,7 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                     "codex_session_rename": True,
                     "plan_view": True,
                     "plan_agent_create": True,
+                    "plan_smoke_test_complete": True,
                     "task_queue": True,
                     "queue_reorder": "queued_only",
                     "image_input": "enabled",

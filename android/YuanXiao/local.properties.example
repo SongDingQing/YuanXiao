@@ -1,0 +1,6 @@
+# Copy this file to local.properties and fill in private/local values.
+# The placeholder `a` values show the expected shape without exposing a real host.
+
+sdk.dir=/Users/a/Library/Android/sdk
+yuanxiao.relay.baseUrl=https://a.example.com
+yuanxiao.apk.outputDir=/Users/a/ChangE/YuanXiao/builds

@@ -1,0 +1,45 @@
+# YuanXiao Change Log
+
+## 0.28
+
+- Prevented overlapping Dashboard and inbox polling in the Android app.
+- Added bounded structured request-log retention in the Mac mini bridge.
+- Kept the long Codex session timeout fixes from v0.27.
+- Moved private relay base URL and APK output path into local-only Android
+  properties with a committed example template.
+- Replaced committed private deployment details with public templates.
+
+## 0.27
+
+- Raised long targeted Codex session chat timeouts to handle very large sessions.
+- Added structured timing/error logs around Codex chat requests.
+
+## 0.26
+
+- Added Codex session creation from the Dashboard.
+- Added Codex session rename from the dedicated session page.
+
+## 0.25
+
+- Preserved the main ChangE chat history locally on the phone.
+- Reused a stable main ChangE conversation for normal chat.
+
+## 0.24
+
+- Made the Dashboard compact: name, recent message preview, and recent time.
+- Added bridge-side last-message previews without model quota usage.
+
+## 0.23
+
+- Added incremental session-history appends and bounded UI/log/Markdown caches.
+
+## Earlier Highlights
+
+- Added direct ChangE downlink inbox polling.
+- Added local notifications and in-app incoming-message banners.
+- Added Markdown, clickable links, table rendering, image/file/link cards, and
+  external copy buttons.
+- Added Hermes/Codex route selection.
+- Added dedicated Codex session chat pages.
+- Added image upload and Codex vision routing.
+- Added the Q-style ChangE eating yuanxiao launcher icon.

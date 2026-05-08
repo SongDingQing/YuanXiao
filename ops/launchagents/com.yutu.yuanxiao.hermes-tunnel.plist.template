@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.yutu.yuanxiao.hermes-tunnel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/ssh</string>
+    <string>-N</string>
+    <string>-i</string>
+    <string>__YUANXIAO_LOCAL_SSH_KEY__</string>
+    <string>-o</string>
+    <string>BatchMode=yes</string>
+    <string>-o</string>
+    <string>ServerAliveInterval=30</string>
+    <string>-o</string>
+    <string>ServerAliveCountMax=3</string>
+    <string>-o</string>
+    <string>ExitOnForwardFailure=yes</string>
+    <string>-o</string>
+    <string>StrictHostKeyChecking=accept-new</string>
+    <string>-R</string>
+    <string>localhost:__YUANXIAO_REMOTE_TUNNEL_PORT__:__YUANXIAO_LOCAL_BRIDGE_HOST__:__YUANXIAO_LOCAL_BRIDGE_PORT__</string>
+    <string>__YUANXIAO_RELAY_SSH_USER__@__YUANXIAO_RELAY_HOST__</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__YUANXIAO_LOCAL_BRIDGE_DIR__/logs/tunnel.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__YUANXIAO_LOCAL_BRIDGE_DIR__/logs/tunnel.err.log</string>
+</dict>
+</plist>

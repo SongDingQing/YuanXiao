@@ -1,0 +1,12 @@
+[req]
+distinguished_name = req_distinguished_name
+prompt = no
+
+[req_distinguished_name]
+CN = ${YUANXIAO_TLS_COMMON_NAME}
+
+[server_ext]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = ${YUANXIAO_TLS_SAN}

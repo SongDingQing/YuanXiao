@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.yutu.yuanxiao.hermes-bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__YUANXIAO_LOCAL_PYTHON__</string>
+    <string>__YUANXIAO_LOCAL_BRIDGE_DIR__/yuanxiao_hermes_bridge.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__YUANXIAO_LOCAL_BRIDGE_DIR__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>YUANXIAO_BRIDGE_DIR</key>
+    <string>__YUANXIAO_LOCAL_BRIDGE_DIR__</string>
+    <key>YUANXIAO_BRIDGE_HOST</key>
+    <string>__YUANXIAO_LOCAL_BRIDGE_HOST__</string>
+    <key>YUANXIAO_BRIDGE_PORT</key>
+    <string>__YUANXIAO_LOCAL_BRIDGE_PORT__</string>
+    <key>HERMES_ENV_FILE</key>
+    <string>__YUANXIAO_HERMES_ENV_FILE__</string>
+    <key>YUANXIAO_CODEX_SESSIONS_DIR</key>
+    <string>__YUANXIAO_CODEX_HOME__/sessions</string>
+    <key>YUANXIAO_CODEX_STATE_DB</key>
+    <string>__YUANXIAO_CODEX_HOME__/state_5.sqlite</string>
+    <key>YUANXIAO_HERMES_TIMEOUT_SECONDS</key>
+    <string>300</string>
+    <key>YUANXIAO_BRIDGE_MAX_REQUEST_BYTES</key>
+    <string>6000000</string>
+    <key>YUANXIAO_MAX_IMAGE_BASE64_CHARS</key>
+    <string>4500000</string>
+    <key>YUANXIAO_CODEX_VISION_TIMEOUT_SECONDS</key>
+    <string>240</string>
+    <key>YUANXIAO_CODEX_CHAT_TIMEOUT_SECONDS</key>
+    <string>900</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__YUANXIAO_LOCAL_BRIDGE_DIR__/logs/bridge.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__YUANXIAO_LOCAL_BRIDGE_DIR__/logs/bridge.err.log</string>
+</dict>
+</plist>

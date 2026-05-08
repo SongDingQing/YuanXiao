@@ -1,0 +1,43 @@
+.DS_Store
+
+# Android / Gradle
+**/.gradle/
+**/build/
+**/local.properties
+**/.idea/workspace.xml
+**/.idea/caches/
+**/.idea/libraries/
+**/.idea/modules.xml
+**/.idea/navEditor.xml
+**/.idea/assetWizardSettings.xml
+**/.externalNativeBuild/
+**/.cxx/
+
+# Python/runtime caches
+**/__pycache__/
+**/*.pyc
+**/logs/
+**/image-cache/
+**/codex-chat-cache/
+**/*-state.json
+
+# Secrets and signing material
+.env
+.env.*
+**/.env
+**/.env.*
+ops/config/*.env
+ops/config/*.local
+ops/launchagents/*.plist
+!ops/launchagents/*.plist.template
+*.pem
+!android/YuanXiao/app/src/main/res/raw/yuanxiao_ca.pem
+*.key
+*.crt
+*.jks
+*.keystore
+google-services.json
+
+# Delivery artifacts
+*.apk
+*.aab

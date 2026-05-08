@@ -438,15 +438,26 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             message_chars=len(message),
             has_image=bool(str(payload.get("image_base64") or "").strip()),
         )
+        client_connected = True
         while True:
             try:
                 status, response = result_queue.get(timeout=KEEPALIVE_INTERVAL_SECONDS)
                 break
             except queue.Empty:
-                try:
-                    self._write_chunk(b"\n")
-                except (BrokenPipeError, ConnectionResetError, ssl.SSLError, OSError):
-                    return
+                if client_connected:
+                    try:
+                        self._write_chunk(b"\n")
+                    except (BrokenPipeError, ConnectionResetError, ssl.SSLError, OSError) as exc:
+                        client_connected = False
+                        log_event(
+                            "chat_client_disconnected",
+                            client_ip=client_ip,
+                            target=str(payload.get("target") or payload.get("route") or ""),
+                            codex_session_id=str(payload.get("codex_session_id") or ""),
+                            conversation=conversation,
+                            duration_ms=int((time.monotonic() - started) * 1000),
+                            detail=exc.__class__.__name__,
+                        )
 
         response["server"] = "change"
         response["upstream_status"] = status
@@ -462,12 +473,64 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             duration_ms=response.get("relay_duration_ms"),
             error=response.get("error", ""),
         )
+        if not client_connected:
+            self._enqueue_async_chat_reply(payload, conversation, status, response, started, reason="client_disconnected")
+            return
         try:
             self._write_chunk(json.dumps(response, ensure_ascii=False).encode("utf-8"))
             self.wfile.write(b"0\r\n\r\n")
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, ssl.SSLError, OSError):
+            self._enqueue_async_chat_reply(payload, conversation, status, response, started, reason="final_write_failed")
             return
+
+    def _enqueue_async_chat_reply(
+        self,
+        payload: dict[str, object],
+        conversation: str,
+        status: int,
+        response: dict[str, object],
+        started: float,
+        *,
+        reason: str,
+    ) -> None:
+        reply = str(response.get("reply") or "").strip()
+        if not reply:
+            detail = str(response.get("detail") or response.get("error") or "unknown_error")
+            reply = f"嫦娥处理这次请求时没有拿到完整回复：{detail}"
+        inbox_payload: dict[str, object] = {
+            "speaker": "嫦娥",
+            "text": reply,
+            "conversation": conversation,
+            "source": "change-async-chat",
+            "format": "markdown",
+        }
+        for key in ("images", "files", "attachments", "links"):
+            value = response.get(key)
+            if isinstance(value, list) and value:
+                inbox_payload[key] = value
+        try:
+            message = append_inbox_message(inbox_payload)
+            log_event(
+                "chat_async_inbox_queued",
+                reason=reason,
+                target=str(payload.get("target") or payload.get("route") or ""),
+                codex_session_id=str(payload.get("codex_session_id") or ""),
+                conversation=conversation,
+                upstream_status=status,
+                inbox_id=str(message.get("id") or ""),
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+        except Exception as exc:
+            log_event(
+                "chat_async_inbox_failed",
+                reason=reason,
+                target=str(payload.get("target") or payload.get("route") or ""),
+                codex_session_id=str(payload.get("codex_session_id") or ""),
+                conversation=conversation,
+                detail=str(exc),
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
 
     def _send_bridge_post_keepalive(self, path: str, payload: dict[str, object]) -> None:
         result_queue: queue.Queue[tuple[int, dict[str, object]]] = queue.Queue(maxsize=1)
@@ -530,8 +593,10 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(data)
+        self.close_connection = True
 
 
 class YuanXiaoHTTPServer(ThreadingHTTPServer):

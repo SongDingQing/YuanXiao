@@ -43,6 +43,8 @@ Endpoints:
 The service listens on the configured HTTPS port and uses a YuanXiao-specific CA bundled into the Android app.
 Current relay request body limit is 6,000,000 bytes to avoid Android large image uploads surfacing as `software caused connection abort`.
 Image requests and Codex text requests use a chunked keep-alive response while Codex is running, so mobile networks do not close the HTTPS connection before the final JSON reply arrives.
+If the phone still disconnects during a long Codex run, ChangE waits for the bridge result in the background and queues the final reply into the YuanXiao inbox so the APK can receive it on the next inbox poll.
+Short JSON responses explicitly close the HTTPS connection to avoid long-lived idle sockets showing up as later read-timeout noise.
 
 The Hermes API key stays on the Mac mini in the Hermes env file. It is not copied to the ChangE server.
 

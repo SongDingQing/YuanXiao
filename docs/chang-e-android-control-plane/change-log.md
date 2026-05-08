@@ -6,6 +6,8 @@
 - Added `/api/plan/agent/create` through ChangE and the Mac mini bridge.
 - Auto-creates a local test plan when the Plan tab has no project yet.
 - Bumped the delivery APK version to `yuanxiao-0.32.apk`.
+- Server hotfix: if the phone disconnects during a long Codex reply, ChangE now queues the final reply into the YuanXiao inbox instead of dropping it.
+- Server hotfix: normal JSON responses now close the HTTPS connection explicitly to reduce idle socket timeout noise.
 
 ## 0.31
 

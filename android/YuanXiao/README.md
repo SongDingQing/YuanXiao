@@ -27,7 +27,7 @@ Workflow nickname: `煮元宵` means run a YuanXiao-wide optimization pass, buil
 - Text route: default `Hermes 日常` -> Mac mini YuanXiao bridge -> Hermes API; optional `Codex 专业` -> Mac mini YuanXiao bridge -> local Codex CLI text chat (`gpt-5.4`).
 - Image route: Mac mini YuanXiao bridge -> local Codex CLI vision (`gpt-5.4-mini`) -> ChangE reply with `source=codex-via-hermes`.
 - Current target selector support: v0.13 adds bottom chat controls for `Hermes 日常` and `Codex 专业`; the APK sends `target`/`route` with each message and remembers the selected target. v0.25 sends main chat through stable conversation `yuanxiao-change-main`.
-- Current copy control support: v0.14 moves the copy action out of the chat bubble and shows it as a small icon at the bubble's lower-right outside edge.
+- Current copy control support: v0.14 moves the copy action out of the chat bubble and shows it as a small icon at the bubble's lower-right outside edge. v0.43 shrinks the icon, removes the heavy button chrome, and keeps it beside the bubble instead of consuming its own row.
 - Current delivery-status support: v0.15 shows `发送中`, `嫦娥已收到，等待回复`, `嫦娥已回复`, or failure state under the input box.
 - Current Codex session chat support: v0.16 adds a `对话` button to each Dashboard session card; v0.17 opens a dedicated Codex session page with its own message list and input box, then sends text with `codex_session_id` so the Mac mini bridge can resume that session. v0.19 sends the owner's original text into the resumed session instead of the YuanXiao routing wrapper. v0.21 syncs visible Codex session history from Mac mini rollout logs and polls the dedicated session page every 15 seconds. v0.22 sends `after_order` on follow-up polls so YuanXiao only fetches missing messages. v0.23 appends newly returned session messages to the visible page instead of re-rendering the full history when possible.
 - Current reply behavior: main chat replies are displayed as `嫦娥：...` even when the internal source is Hermes; dedicated Codex session replies are displayed in their separate session page.
@@ -41,7 +41,7 @@ Workflow nickname: `煮元宵` means run a YuanXiao-wide optimization pass, buil
 - Current plan view support: v0.29 adds a bottom `计划` tab backed by `/api/plan/projects`, plus `bridge/yuanxiao-hermes-bridge/yuanxiao_agent_scheduler.py` for asynchronous project/CEO/agent status updates. The plan endpoint reads a local JSON state file and does not call a model. v0.30 adds cache hits when that file is unchanged. v0.32 adds Plan-tab Agent creation through `/api/plan/agent/create`; when no project exists, the bridge creates a local test project first.
 - Current queue view support: v0.31 adds a bottom `队列` tab backed by `/api/queue/tasks`, with a collapsible guide and queued-only up/down reordering through `/api/queue/reorder`. Queue reads scan Hermes/Codex handoff files and do not call a model; running tasks are not interrupted.
 - Current task-center support: v0.42 adds a bottom `任务` tab backed by `/api/v1/tasks`, with compact task cards for ChangE/Codex/image/session work, a durable SQLite task ledger, event reads, agent registry, and automatic stale-task blocking. Task reads are file/DB-only and do not call a model.
-- Current UI support: redesigned v0.6 native UI with a status header, fixed-height text controls, separate search/chat/composer areas, and no default Android buttons that clip labels. v0.7 uses the Q-style Chang'e eating yuanxiao launcher icon. v0.8 moves search into the menu and a separate page. v0.10 makes the chat title `嫦娥` and shows the Chang'e icon only beside incoming ChangE messages. v0.18 folds the main chat bottom choices into an `选项` panel so the default composer stays compact. v0.20 keeps the package/project naming as YuanXiao while the installed launcher app name displays as `元宵`. v0.24 makes the Dashboard session list more compact and row-tap opens the dedicated session chat. v0.31 makes `Hermes` / `Codex` / `计划` / `队列` the top-level bottom tabs. v0.32 adds an `Agent` action in the Plan tab header. v0.42 adds the `任务` tab and keeps async receipt/status chatter out of the main chat stream.
+- Current UI support: redesigned v0.6 native UI with a status header, fixed-height text controls, separate search/chat/composer areas, and no default Android buttons that clip labels. v0.7 uses the Q-style Chang'e eating yuanxiao launcher icon. v0.8 moves search into the menu and a separate page. v0.10 makes the chat title `嫦娥` and shows the Chang'e icon only beside incoming ChangE messages. v0.18 folds the main chat bottom choices into an `选项` panel so the default composer stays compact. v0.20 keeps the package/project naming as YuanXiao while the installed launcher app name displays as `元宵`. v0.24 makes the Dashboard session list more compact and row-tap opens the dedicated session chat. v0.31 makes `Hermes` / `Codex` / `计划` / `队列` the top-level bottom tabs. v0.32 adds an `Agent` action in the Plan tab header. v0.42 adds the `任务` tab and keeps async receipt/status chatter out of the main chat stream. v0.43 tightens chat row padding and prevents the copy control from stretching vertical spacing.
 - Current rich message support: v0.11 renders Markdown text, tables, clickable links, Markdown image references, image/file/link attachment cards, and a one-tap copy button on each chat bubble. v0.19 aligns Markdown table columns with stable per-column widths. v0.23 adds a bounded cache for small Markdown render results.
 - Current search support: in-memory chat history search with `查`/`上`/`下`/`清`, result count, jump-to-result, and highlighted bubbles.
 - Current log support: server/link/test/status logs are folded into the top-left `日志` button and no longer occupy the chat stream. v0.23 keeps only the latest 120 log lines and autoscrolls logs only while the log panel is visible.
@@ -61,7 +61,7 @@ Private values live in `local.properties`; use `local.properties.example` as the
 `assembleDebug` also copies the debug APK to:
 
 ```text
-<yuanxiao.apk.outputDir>/yuanxiao-0.42.apk
+<yuanxiao.apk.outputDir>/yuanxiao-0.43.apk
 ```
 
 ## Verification
@@ -69,7 +69,7 @@ Private values live in `local.properties`; use `local.properties.example` as the
 ```bash
 JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
   <android-sdk>/build-tools/<version>/apksigner verify --verbose \
-  <yuanxiao.apk.outputDir>/yuanxiao-0.42.apk
+  <yuanxiao.apk.outputDir>/yuanxiao-0.43.apk
 ```
 
 Server local verification through SSH works:
@@ -114,4 +114,4 @@ The latest Quark Netdisk folder `元宵` upload is:
 - 首页的 `元宵` 文件夹 / `yuanxiao-0.42.apk`
 - Future YuanXiao packages must be uploaded into this existing folder only.
 
-The latest source-line local build and Quark delivery APK are `<yuanxiao.apk.outputDir>/yuanxiao-0.42.apk` / `yuanxiao-0.42.apk`, uploaded to the existing home/root-level `元宵` folder on 2026-05-09 as part of the standard `煮元宵` workflow. YuanXiao v0.42 adds the first ChangE task-center tab, records async work in a durable task ledger, marks stale tasks blocked, and reduces chat-stream noise from background receipts.
+The latest source-line local build APK is `<yuanxiao.apk.outputDir>/yuanxiao-0.43.apk`; the latest Quark delivery remains `yuanxiao-0.42.apk` until the next standard `煮元宵` workflow. YuanXiao v0.43 makes chat rows denser by shrinking the outside copy icon and removing the extra per-message copy-button row.

@@ -1,5 +1,12 @@
 # YuanXiao Change Log
 
+## 0.43
+
+- Shrank the external chat-copy icon from a prominent button into a smaller transparent two-rectangle icon.
+- Moved the copy icon beside the lower-right of the bubble instead of giving it a separate full-width row.
+- Reduced chat row vertical padding so adjacent conversation bubbles sit closer together.
+- Built and signature-verified local `yuanxiao-0.43.apk`; SHA256 `e231965aa0034b2e9b64abc7a052e58a893bf3023abb69a43e1f1218c1162f6e`; latest Quark delivery remains `yuanxiao-0.42.apk` until the next `煮元宵`.
+
 ## 0.42
 
 - Added `change_scheduler.py`, a durable SQLite task ledger for ChangE/YuanXiao task cards, task events, static agent registry, and stale-task blocking.

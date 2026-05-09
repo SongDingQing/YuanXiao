@@ -3259,7 +3259,7 @@ public class MainActivity extends Activity {
     private View makeCopyIconButton() {
         CopyIconView button = new CopyIconView(this);
         button.setContentDescription("复制本条聊天内容");
-        button.setBackground(makePanelBackground(Color.rgb(247, 250, 253), dp(16), 1, Color.rgb(220, 228, 238)));
+        button.setBackground(makePanelBackground(Color.TRANSPARENT, dp(11), 0, Color.TRANSPARENT));
         return button;
     }
 
@@ -3272,11 +3272,11 @@ public class MainActivity extends Activity {
             super(context);
             setClickable(true);
             setFocusable(true);
-            iconPaint.setColor(Color.rgb(72, 84, 101));
+            iconPaint.setColor(Color.rgb(104, 116, 132));
             iconPaint.setStyle(Paint.Style.STROKE);
             iconPaint.setStrokeCap(Paint.Cap.ROUND);
             iconPaint.setStrokeJoin(Paint.Join.ROUND);
-            iconPaint.setStrokeWidth(Math.max(1.5f, getResources().getDisplayMetrics().density * 1.6f));
+            iconPaint.setStrokeWidth(Math.max(1.2f, getResources().getDisplayMetrics().density * 1.25f));
         }
 
         @Override
@@ -3284,10 +3284,10 @@ public class MainActivity extends Activity {
             super.onDraw(canvas);
             float centerX = getWidth() / 2f;
             float centerY = getHeight() / 2f;
-            float rectWidth = dp(12);
-            float rectHeight = dp(13);
-            float offset = dp(3);
-            float radius = dp(3);
+            float rectWidth = dp(8);
+            float rectHeight = dp(9);
+            float offset = dp(2);
+            float radius = dp(2);
 
             backRect.set(
                     centerX - rectWidth / 2f - offset,
@@ -3325,6 +3325,8 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.43", "复制按钮缩小并降低视觉重量。"));
+        v0.entries.add(new ReleaseEntry("0.43", "聊天气泡垂直间距更紧凑。"));
         v0.entries.add(new ReleaseEntry("0.42", "新增嫦娥任务中枢任务卡。"));
         v0.entries.add(new ReleaseEntry("0.42", "Codex 后台请求接入任务账本。"));
         v0.entries.add(new ReleaseEntry("0.42", "卡住任务会自动标记阻塞。"));
@@ -4781,7 +4783,7 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(mine ? Gravity.END : Gravity.START);
-        row.setPadding(0, dp(4), 0, dp(4));
+        row.setPadding(0, dp(1), 0, dp(1));
 
         if (!mine && "嫦娥".equals(speaker)) {
             ImageView avatar = new ImageView(this);
@@ -4821,23 +4823,17 @@ public class MainActivity extends Activity {
         copyButton.setOnClickListener(view -> copyMessageToClipboard(copyText));
 
         LinearLayout messageBlock = new LinearLayout(this);
-        messageBlock.setOrientation(LinearLayout.VERTICAL);
-        messageBlock.setGravity(Gravity.END);
+        messageBlock.setOrientation(LinearLayout.HORIZONTAL);
+        messageBlock.setGravity(Gravity.BOTTOM | (mine ? Gravity.END : Gravity.START));
         messageBlock.addView(bubble, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
 
-        LinearLayout copyRow = new LinearLayout(this);
-        copyRow.setGravity(Gravity.END);
-        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(dp(32), dp(32));
-        copyParams.topMargin = dp(3);
-        copyParams.rightMargin = dp(2);
-        copyRow.addView(copyButton, copyParams);
-        messageBlock.addView(copyRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        ));
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(dp(22), dp(22));
+        copyParams.leftMargin = dp(3);
+        copyParams.bottomMargin = dp(1);
+        messageBlock.addView(copyButton, copyParams);
 
         LinearLayout.LayoutParams bubbleParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,

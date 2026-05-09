@@ -618,7 +618,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.45", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.46", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -919,12 +919,22 @@ public class MainActivity extends Activity {
         sessionTitle.setTextColor(Color.rgb(26, 32, 43));
         titleBlock.addView(sessionTitle);
 
-        sessionSubtitle = new TextView(this);
-        sessionSubtitle.setText("未选择会话");
-        sessionSubtitle.setTextSize(12);
-        sessionSubtitle.setTextColor(Color.rgb(91, 101, 116));
-        sessionSubtitle.setSingleLine(false);
-        titleBlock.addView(sessionSubtitle);
+        sessionSubtitle = makeSessionIdButton();
+        sessionSubtitle.setOnClickListener(view -> copyCurrentSessionId());
+        LinearLayout.LayoutParams sessionIdParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(30)
+        );
+        sessionIdParams.topMargin = dp(6);
+        titleBlock.addView(sessionSubtitle, sessionIdParams);
+
+        sessionDeliveryStatusBar = makeSessionStatusBar();
+        LinearLayout.LayoutParams deliveryParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(30)
+        );
+        deliveryParams.topMargin = dp(6);
+        titleBlock.addView(sessionDeliveryStatusBar, deliveryParams);
         header.addView(titleBlock, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         sessionRenameButton = makeActionChip("改名", Color.rgb(231, 241, 255), Color.rgb(31, 96, 164));
@@ -1027,23 +1037,6 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
-
-        sessionDeliveryStatusBar = new TextView(this);
-        sessionDeliveryStatusBar.setText("状态：就绪");
-        sessionDeliveryStatusBar.setTextSize(12);
-        sessionDeliveryStatusBar.setTypeface(Typeface.DEFAULT_BOLD);
-        sessionDeliveryStatusBar.setTextColor(Color.rgb(91, 102, 118));
-        sessionDeliveryStatusBar.setGravity(Gravity.CENTER_VERTICAL);
-        sessionDeliveryStatusBar.setIncludeFontPadding(false);
-        sessionDeliveryStatusBar.setSingleLine(false);
-        sessionDeliveryStatusBar.setPadding(dp(10), 0, dp(10), 0);
-        sessionDeliveryStatusBar.setBackground(makePanelBackground(Color.rgb(244, 247, 252), dp(13), 1, Color.rgb(226, 232, 240)));
-        LinearLayout.LayoutParams deliveryParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(34)
-        );
-        deliveryParams.topMargin = dp(8);
-        composer.addView(sessionDeliveryStatusBar, deliveryParams);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -3316,6 +3309,38 @@ public class MainActivity extends Activity {
         return chip;
     }
 
+    private TextView makeSessionIdButton() {
+        TextView button = new TextView(this);
+        button.setText("复制 Session ID");
+        button.setTextSize(12);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setTextColor(Color.rgb(31, 96, 164));
+        button.setGravity(Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+        button.setSingleLine(true);
+        button.setEllipsize(TextUtils.TruncateAt.END);
+        button.setPadding(dp(10), 0, dp(10), 0);
+        button.setClickable(true);
+        button.setFocusable(true);
+        button.setBackground(makePanelBackground(Color.rgb(231, 241, 255), dp(13), 1, Color.rgb(205, 222, 244)));
+        return button;
+    }
+
+    private TextView makeSessionStatusBar() {
+        TextView status = new TextView(this);
+        status.setText("状态：就绪");
+        status.setTextSize(12);
+        status.setTypeface(Typeface.DEFAULT_BOLD);
+        status.setTextColor(Color.rgb(91, 102, 118));
+        status.setGravity(Gravity.CENTER_VERTICAL);
+        status.setIncludeFontPadding(false);
+        status.setSingleLine(true);
+        status.setEllipsize(TextUtils.TruncateAt.END);
+        status.setPadding(dp(10), 0, dp(10), 0);
+        status.setBackground(makePanelBackground(Color.rgb(244, 247, 252), dp(13), 1, Color.rgb(226, 232, 240)));
+        return status;
+    }
+
     private LinearLayout makeQuotePanel(TextView preview, TextView clearButton) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.HORIZONTAL);
@@ -3450,6 +3475,8 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.46", "Session 同步状态移到标题区域。"));
+        v0.entries.add(new ReleaseEntry("0.46", "标题下方改为复制 Session ID 按钮。"));
         v0.entries.add(new ReleaseEntry("0.45", "新消息弹窗改为紧凑通知卡。"));
         v0.entries.add(new ReleaseEntry("0.45", "通知卡支持上滑关闭和点击跳转。"));
         v0.entries.add(new ReleaseEntry("0.45", "系统通知点击可进入对应会话。"));
@@ -3999,10 +4026,21 @@ public class MainActivity extends Activity {
         }
         String title = compactSessionTitle(selectedCodexSessionTitle);
         sessionTitle.setText(title);
-        sessionSubtitle.setText(selectedCodexSessionId.isEmpty() ? "未选择会话" : selectedCodexSessionId);
+        boolean hasSession = !selectedCodexSessionId.isEmpty();
+        sessionSubtitle.setText(hasSession ? "复制 Session ID" : "未选择会话");
+        sessionSubtitle.setEnabled(hasSession);
+        sessionSubtitle.setAlpha(hasSession ? 1f : 0.55f);
         if (sessionRenameButton != null) {
-            sessionRenameButton.setEnabled(!selectedCodexSessionId.isEmpty() && !sessionSendInFlight);
+            sessionRenameButton.setEnabled(hasSession && !sessionSendInFlight);
         }
+    }
+
+    private void copyCurrentSessionId() {
+        if (selectedCodexSessionId == null || selectedCodexSessionId.trim().isEmpty()) {
+            appendLog("当前没有可复制的 session id。");
+            return;
+        }
+        copyTextToClipboard("Codex session id", selectedCodexSessionId.trim(), "已复制 Codex session id。");
     }
 
     private void reloadCurrentSessionChat() {
@@ -5525,13 +5563,18 @@ public class MainActivity extends Activity {
     }
 
     private void copyMessageToClipboard(String text) {
+        copyTextToClipboard("元宵聊天内容", text == null ? "" : text, "已复制本条聊天内容。");
+    }
+
+    private void copyTextToClipboard(String label, String text, String successLog) {
         ClipboardManager manager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (manager == null) {
             appendLog("复制失败：系统剪贴板不可用。");
             return;
         }
-        manager.setPrimaryClip(ClipData.newPlainText("元宵聊天内容", text == null ? "" : text));
-        appendLog("已复制本条聊天内容。");
+        String safeLabel = label == null || label.trim().isEmpty() ? "元宵内容" : label.trim();
+        manager.setPrimaryClip(ClipData.newPlainText(safeLabel, text == null ? "" : text));
+        appendLog(successLog == null || successLog.trim().isEmpty() ? "已复制。" : successLog);
     }
 
     private void setPendingQuote(boolean sessionScope, String speaker, String text) {

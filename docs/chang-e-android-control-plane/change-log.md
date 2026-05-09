@@ -1,5 +1,12 @@
 # YuanXiao Change Log
 
+## 0.46
+
+- Moved the dedicated Codex-session delivery/sync status from below the input box into the conversation header area.
+- Replaced the raw session id subtitle with a compact `复制 Session ID` button.
+- The session id button copies the full selected Codex session id to the Android clipboard and writes a short success log.
+- Built and signature-verified local `yuanxiao-0.46.apk`; SHA256 `6fc39549cb2279671fb01d3e19c6fd0b28f416e810102ca436130bcf29da063f`; latest Quark delivery remains `yuanxiao-0.42.apk` until the next `煮元宵`.
+
 ## 0.45
 
 - Replaced the old full-width in-app message banner with a compact card-style notification.

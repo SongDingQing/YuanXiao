@@ -620,7 +620,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.48", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.49", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -3523,6 +3523,8 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.49", "修复使用者气泡左侧被裁切。"));
+        v0.entries.add(new ReleaseEntry("0.49", "煮汤圆打包上传并同步 GitHub。"));
         v0.entries.add(new ReleaseEntry("0.48", "煮元宵优化回执确认避免整页重绘。"));
         v0.entries.add(new ReleaseEntry("0.48", "打包上传并同步 GitHub 交付。"));
         v0.entries.add(new ReleaseEntry("0.47", "Session 发送消息增加空圆圈回执。"));
@@ -5158,6 +5160,8 @@ public class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(mine ? Gravity.END : Gravity.START);
         row.setPadding(0, dp(1), 0, dp(1));
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
 
         if (!mine && "嫦娥".equals(speaker)) {
             ImageView avatar = new ImageView(this);
@@ -5169,10 +5173,11 @@ public class MainActivity extends Activity {
             row.addView(avatar, avatarParams);
         }
 
-        LinearLayout bubble = new LinearLayout(this);
+        MaxWidthLinearLayout bubble = new MaxWidthLinearLayout(this);
         bubble.setOrientation(LinearLayout.VERTICAL);
         bubble.setPadding(dp(12), dp(8), dp(12), dp(8));
         bubble.setBackground(makeBubbleBackground(mine, false));
+        bubble.setMaxWidthPx(maxChatBubbleWidth(mine));
 
         TextView label = new TextView(this);
         String safeTime = timeLabel == null || timeLabel.trim().isEmpty() ? stamp() : timeLabel.trim();
@@ -5201,6 +5206,8 @@ public class MainActivity extends Activity {
         LinearLayout messageBlock = new LinearLayout(this);
         messageBlock.setOrientation(LinearLayout.HORIZONTAL);
         messageBlock.setGravity(Gravity.BOTTOM | (mine ? Gravity.END : Gravity.START));
+        messageBlock.setClipChildren(false);
+        messageBlock.setClipToPadding(false);
         messageBlock.addView(bubble, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -5215,6 +5222,8 @@ public class MainActivity extends Activity {
         LinearLayout messageColumn = new LinearLayout(this);
         messageColumn.setOrientation(LinearLayout.VERTICAL);
         messageColumn.setGravity(mine ? Gravity.END : Gravity.START);
+        messageColumn.setClipChildren(false);
+        messageColumn.setClipToPadding(false);
         messageColumn.addView(messageBlock, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -5245,6 +5254,16 @@ public class MainActivity extends Activity {
             scrollToBottom(targetScrollView);
         }
         return receiptIndicator;
+    }
+
+    private int maxChatBubbleWidth(boolean mine) {
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int fixedWidth = dp(20 + 48 + 22 + 3 + 12);
+        if (!mine) {
+            fixedWidth += dp(44);
+        }
+        int available = screenWidth - fixedWidth;
+        return Math.max(dp(168), Math.min(dp(420), available));
     }
 
     private void setupMessageActions(View row, View bubble, String speaker, String copyText, boolean sessionScope) {
@@ -5677,7 +5696,8 @@ public class MainActivity extends Activity {
             imageView.setOnClickListener(view -> openUrl(attachment.url));
             imageView.setClickable(true);
         }
-        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(dp(228), LinearLayout.LayoutParams.WRAP_CONTENT);
+        int imageWidth = Math.min(dp(228), Math.max(dp(144), maxChatBubbleWidth(mine) - dp(24)));
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(imageWidth, LinearLayout.LayoutParams.WRAP_CONTENT);
         imageParams.topMargin = dp(8);
         bubble.addView(imageView, imageParams);
     }
@@ -6254,6 +6274,35 @@ public class MainActivity extends Activity {
             this.bubble = bubble;
             this.mine = mine;
             this.searchText = searchText;
+        }
+    }
+
+    private static class MaxWidthLinearLayout extends LinearLayout {
+        private int maxWidthPx = Integer.MAX_VALUE;
+
+        MaxWidthLinearLayout(Context context) {
+            super(context);
+        }
+
+        void setMaxWidthPx(int maxWidthPx) {
+            this.maxWidthPx = maxWidthPx > 0 ? maxWidthPx : Integer.MAX_VALUE;
+            requestLayout();
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            if (maxWidthPx != Integer.MAX_VALUE) {
+                int mode = View.MeasureSpec.getMode(widthMeasureSpec);
+                int size = View.MeasureSpec.getSize(widthMeasureSpec);
+                if (mode == View.MeasureSpec.UNSPECIFIED || size > maxWidthPx) {
+                    int nextMode = mode == View.MeasureSpec.UNSPECIFIED ? View.MeasureSpec.AT_MOST : mode;
+                    widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(maxWidthPx, nextMode);
+                }
+            }
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+            if (maxWidthPx != Integer.MAX_VALUE && getMeasuredWidth() > maxWidthPx) {
+                setMeasuredDimension(maxWidthPx, getMeasuredHeight());
+            }
         }
     }
 

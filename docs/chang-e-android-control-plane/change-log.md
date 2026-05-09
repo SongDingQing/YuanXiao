@@ -1,5 +1,15 @@
 # YuanXiao Change Log
 
+## 0.49
+
+- Added a responsive max-width layout for chat bubbles so outgoing user bubbles keep enough left breathing room and do not get clipped by the external copy icon.
+- Disabled clipping on the chat row/message block wrappers so the small external copy and receipt controls do not force visual cropping.
+- Made image attachment width follow the same bubble width budget on narrower screens.
+- Built and signature-verified `yuanxiao-0.49.apk`; SHA256 `2ace15e2a7083347a6b02570c4ad90a91de64efb4eb6b42543b323411633a0e0`.
+- Public `/health` and Codex session-list smoke tests returned `status=ok`; session list reported `quota_cost=none_file_scan_only`.
+- Uploaded `yuanxiao-0.49.apk` to the existing Quark root/home `元宵` folder; Quark showed it in that folder with timestamp 2026-05-09 22:03.
+- Deferred a larger Compose/RecyclerView chat rewrite because it needs Huawei-device regression validation.
+
 ## 0.48
 
 - Optimized the Codex-session receipt path so a server echo for an already visible outgoing message updates the receipt state without forcing a full session chat re-render.

@@ -1,5 +1,14 @@
 # YuanXiao Change Log
 
+## 0.45
+
+- Replaced the old full-width in-app message banner with a compact card-style notification.
+- Shortened the in-app notification auto-hide delay from 5.2 seconds to 3.2 seconds.
+- Added upward swipe-to-dismiss for the in-app notification card.
+- Added tap-to-open routing for the in-app card: main ChangE messages open the Hermes chat, and Codex-session messages open the matching dedicated session.
+- Added the same destination extras to Android system notifications so tapping them can jump to the right conversation.
+- Built and signature-verified local `yuanxiao-0.45.apk`; SHA256 `7c76861db82e021d72d762fd1d2dfe64adbbded297a1d855bba983b365e5358f`; latest Quark delivery remains `yuanxiao-0.42.apk` until the next `煮元宵`.
+
 ## 0.44
 
 - Enabled Android-native text selection on rendered chat text and markdown table cells.

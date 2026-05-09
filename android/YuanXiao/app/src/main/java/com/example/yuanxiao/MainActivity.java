@@ -37,6 +37,7 @@ import android.view.ActionMode;
 import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
@@ -92,6 +93,9 @@ public class MainActivity extends Activity {
     private static final String NOTIFICATION_CHANNEL_ID = "yuanxiao_messages";
     private static final String PREFS_NAME = "yuanxiao_state";
     private static final String KEY_LAST_INBOX_ID = "last_inbox_id";
+    private static final String EXTRA_NOTICE_DESTINATION = "yuanxiao_notice_destination";
+    private static final String EXTRA_NOTICE_SESSION_ID = "yuanxiao_notice_session_id";
+    private static final String EXTRA_NOTICE_SESSION_TITLE = "yuanxiao_notice_session_title";
     private static final int MENU_QUOTE_SELECTION = 8101;
     private static final String KEY_CHAT_TARGET = "chat_target";
     private static final String KEY_CODEX_SESSION_ID = "codex_session_id";
@@ -120,6 +124,7 @@ public class MainActivity extends Activity {
     private static final long PLAN_POLL_INTERVAL_MS = 20_000L;
     private static final long QUEUE_POLL_INTERVAL_MS = 15_000L;
     private static final long TASK_POLL_INTERVAL_MS = 12_000L;
+    private static final long NOTICE_AUTO_HIDE_MS = 3_200L;
     private static final Pattern MARKDOWN_IMAGE_PATTERN = Pattern.compile("!\\[([^\\]]*)]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\)");
     private static final Pattern MARKDOWN_LINK_PATTERN = Pattern.compile("\\[([^\\]]+)]\\((https?://[^)\\s]+)(?:\\s+\"[^\"]*\")?\\)");
     private static final Pattern RAW_URL_PATTERN = Pattern.compile("https?://\\S+");
@@ -140,7 +145,13 @@ public class MainActivity extends Activity {
         return RELAY_BASE_URL + path;
     }
 
-    private TextView noticeBanner;
+    private LinearLayout noticeBanner;
+    private TextView noticeTitle;
+    private TextView noticeBody;
+    private TextView noticeAction;
+    private String noticeSessionId = "";
+    private String noticeSessionTitle = "";
+    private float noticeTouchStartY = 0f;
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
     private final Handler inboxHandler = new Handler(Looper.getMainLooper());
     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
@@ -149,11 +160,7 @@ public class MainActivity extends Activity {
     private final Handler queueHandler = new Handler(Looper.getMainLooper());
     private final Handler taskHandler = new Handler(Looper.getMainLooper());
     private final Handler noticeHandler = new Handler(Looper.getMainLooper());
-    private final Runnable hideNoticeRunnable = () -> {
-        if (noticeBanner != null) {
-            noticeBanner.setVisibility(View.GONE);
-        }
-    };
+    private final Runnable hideNoticeRunnable = this::hideInAppNotice;
     private final Runnable inboxPollRunnable = new Runnable() {
         @Override
         public void run() {
@@ -359,6 +366,14 @@ public class MainActivity extends Activity {
         appendLog("元宵会自动接收嫦娥主动下发的消息。");
         showChat();
         startInboxPolling();
+        handleNoticeIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleNoticeIntent(intent);
     }
 
     @Override
@@ -450,19 +465,68 @@ public class MainActivity extends Activity {
         screenRoot.setOrientation(LinearLayout.VERTICAL);
         screenRoot.setBackgroundColor(Color.rgb(246, 247, 251));
 
-        noticeBanner = new TextView(this);
+        noticeBanner = new LinearLayout(this);
         noticeBanner.setVisibility(View.GONE);
-        noticeBanner.setTextSize(14);
-        noticeBanner.setTypeface(Typeface.DEFAULT_BOLD);
-        noticeBanner.setTextColor(Color.rgb(28, 38, 56));
-        noticeBanner.setSingleLine(false);
+        noticeBanner.setOrientation(LinearLayout.HORIZONTAL);
         noticeBanner.setGravity(Gravity.CENTER_VERTICAL);
-        noticeBanner.setPadding(dp(14), dp(10), dp(14), dp(10));
-        noticeBanner.setBackground(makePanelBackground(Color.rgb(255, 247, 220), 0, 0, Color.TRANSPARENT));
-        screenRoot.addView(noticeBanner, new LinearLayout.LayoutParams(
+        noticeBanner.setPadding(dp(12), dp(10), dp(10), dp(10));
+        noticeBanner.setBackground(makePanelBackground(Color.WHITE, dp(18), 1, Color.rgb(216, 226, 241)));
+        noticeBanner.setClickable(true);
+        noticeBanner.setFocusable(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            noticeBanner.setElevation(dp(8));
+        }
+        noticeBanner.setOnTouchListener((view, event) -> handleNoticeTouch(event));
+
+        ImageView noticeIcon = new ImageView(this);
+        noticeIcon.setImageResource(getApplicationInfo().icon);
+        noticeIcon.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        noticeIcon.setBackground(makePanelBackground(Color.rgb(242, 247, 255), dp(12), 1, Color.rgb(223, 233, 248)));
+        LinearLayout.LayoutParams noticeIconParams = new LinearLayout.LayoutParams(dp(38), dp(38));
+        noticeIconParams.rightMargin = dp(10);
+        noticeBanner.addView(noticeIcon, noticeIconParams);
+
+        LinearLayout noticeTexts = new LinearLayout(this);
+        noticeTexts.setOrientation(LinearLayout.VERTICAL);
+        noticeTexts.setGravity(Gravity.CENTER_VERTICAL);
+        noticeTitle = new TextView(this);
+        noticeTitle.setTextSize(13);
+        noticeTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        noticeTitle.setTextColor(Color.rgb(25, 38, 58));
+        noticeTitle.setSingleLine(true);
+        noticeTitle.setEllipsize(TextUtils.TruncateAt.END);
+        noticeTitle.setIncludeFontPadding(false);
+        noticeTexts.addView(noticeTitle);
+
+        noticeBody = new TextView(this);
+        noticeBody.setTextSize(13);
+        noticeBody.setTextColor(Color.rgb(79, 90, 108));
+        noticeBody.setMaxLines(2);
+        noticeBody.setEllipsize(TextUtils.TruncateAt.END);
+        noticeBody.setIncludeFontPadding(false);
+        LinearLayout.LayoutParams noticeBodyParams = matchWrap();
+        noticeBodyParams.topMargin = dp(4);
+        noticeTexts.addView(noticeBody, noticeBodyParams);
+        noticeBanner.addView(noticeTexts, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        noticeAction = new TextView(this);
+        noticeAction.setText("打开");
+        noticeAction.setTextSize(12);
+        noticeAction.setTypeface(Typeface.DEFAULT_BOLD);
+        noticeAction.setTextColor(Color.rgb(31, 96, 164));
+        noticeAction.setGravity(Gravity.CENTER);
+        noticeAction.setIncludeFontPadding(false);
+        noticeAction.setBackground(makePanelBackground(Color.rgb(231, 241, 255), dp(13), 0, Color.TRANSPARENT));
+        LinearLayout.LayoutParams noticeActionParams = new LinearLayout.LayoutParams(dp(48), dp(32));
+        noticeActionParams.leftMargin = dp(10);
+        noticeBanner.addView(noticeAction, noticeActionParams);
+
+        LinearLayout.LayoutParams noticeParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-        ));
+        );
+        noticeParams.setMargins(dp(10), dp(8), dp(10), dp(2));
+        screenRoot.addView(noticeBanner, noticeParams);
 
         dashboardView = buildDashboardView();
         dashboardView.setVisibility(View.GONE);
@@ -554,7 +618,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.44", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.45", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -2048,7 +2112,7 @@ public class MainActivity extends Activity {
                         appendSessionRenderedMessages(result.appendedMessages);
                     }
                     if (!initialLoad && result.hasNewAssistantMessage) {
-                        showIncomingNotification("Codex session 有新消息", result.newestAssistantText, false);
+                        showIncomingNotification("Codex session 有新消息", result.newestAssistantText, false, sessionId, selectedCodexSessionTitle);
                     }
                     if (!sessionSendInFlight) {
                         setSessionDeliverySynced();
@@ -3386,6 +3450,9 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.45", "新消息弹窗改为紧凑通知卡。"));
+        v0.entries.add(new ReleaseEntry("0.45", "通知卡支持上滑关闭和点击跳转。"));
+        v0.entries.add(new ReleaseEntry("0.45", "系统通知点击可进入对应会话。"));
         v0.entries.add(new ReleaseEntry("0.44", "聊天正文支持安卓原生选中文字。"));
         v0.entries.add(new ReleaseEntry("0.44", "长按消息可引用整条或复制。"));
         v0.entries.add(new ReleaseEntry("0.44", "选中文字菜单新增引用并自动拼接上下文。"));
@@ -3847,7 +3914,7 @@ public class MainActivity extends Activity {
                     setSessionDeliveryReplied();
                     syncCurrentSessionMessages(false);
                 }
-                showIncomingNotification("Codex session 后台回复", text.isEmpty() ? "后台任务已完成" : text, hasImageAttachment(attachments));
+                showIncomingNotification("Codex session 后台回复", text.isEmpty() ? "后台任务已完成" : text, hasImageAttachment(attachments), sessionId, "");
                 return;
             }
             appendTextMessage(speaker, text, false, null, attachments);
@@ -4422,7 +4489,7 @@ public class MainActivity extends Activity {
         int finalImageCount = imageCount;
         runOnUiThread(() -> {
             appendSessionTextMessage(sessionId, "Codex", reply, false, null, finalAttachments);
-            showIncomingNotification("Codex session 已回复", reply, finalImageCount > 0);
+            showIncomingNotification("Codex session 已回复", reply, finalImageCount > 0, sessionId, selectedCodexSessionTitle);
             setSessionDeliveryReplied();
         });
     }
@@ -5698,6 +5765,10 @@ public class MainActivity extends Activity {
     }
 
     private void showIncomingNotification(String title, String reply, boolean hasImage) {
+        showIncomingNotification(title, reply, hasImage, "", "");
+    }
+
+    private void showIncomingNotification(String title, String reply, boolean hasImage, String sessionId, String sessionTitle) {
         String safeTitle = title == null || title.trim().isEmpty() ? "嫦娥有新回复" : title.trim();
         String summary = hasImage ? "收到图片回复" : reply;
         if (summary == null || summary.trim().isEmpty()) {
@@ -5706,7 +5777,7 @@ public class MainActivity extends Activity {
         if (summary.length() > 90) {
             summary = summary.substring(0, 90) + "...";
         }
-        showInAppNotice(safeTitle, summary);
+        showInAppNotice(safeTitle, summary, sessionId, sessionTitle);
 
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager == null) {
@@ -5724,9 +5795,14 @@ public class MainActivity extends Activity {
 
         Intent intent = new Intent(this, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        String cleanSessionId = sessionId == null ? "" : sessionId.trim();
+        String cleanSessionTitle = sessionTitle == null ? "" : sessionTitle.trim();
+        intent.putExtra(EXTRA_NOTICE_DESTINATION, cleanSessionId.isEmpty() ? TAB_HERMES : TAB_CODEX);
+        intent.putExtra(EXTRA_NOTICE_SESSION_ID, cleanSessionId);
+        intent.putExtra(EXTRA_NOTICE_SESSION_TITLE, cleanSessionTitle);
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 this,
-                0,
+                cleanSessionId.isEmpty() ? 0 : (cleanSessionId.hashCode() & 0x7fffffff),
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
@@ -5751,14 +5827,122 @@ public class MainActivity extends Activity {
     }
 
     private void showInAppNotice(String title, String body) {
+        showInAppNotice(title, body, "", "");
+    }
+
+    private void showInAppNotice(String title, String body, String sessionId, String sessionTitle) {
         if (noticeBanner == null) {
             return;
         }
+        noticeBanner.animate().cancel();
+        noticeSessionId = sessionId == null ? "" : sessionId.trim();
+        noticeSessionTitle = sessionTitle == null ? "" : sessionTitle.trim();
         String safeBody = body == null ? "" : body.trim();
-        noticeBanner.setText(title + (safeBody.isEmpty() ? "" : "\n" + safeBody));
+        noticeTitle.setText(title == null || title.trim().isEmpty() ? "嫦娥有新回复" : title.trim());
+        noticeBody.setText(safeBody.isEmpty() ? "收到新消息" : safeBody);
+        noticeAction.setText(noticeSessionId.isEmpty() ? "聊天" : "会话");
+        noticeBanner.setAlpha(1f);
+        noticeBanner.setTranslationY(0f);
         noticeBanner.setVisibility(View.VISIBLE);
         noticeHandler.removeCallbacks(hideNoticeRunnable);
-        noticeHandler.postDelayed(hideNoticeRunnable, 5200L);
+        noticeHandler.postDelayed(hideNoticeRunnable, NOTICE_AUTO_HIDE_MS);
+    }
+
+    private boolean handleNoticeTouch(MotionEvent event) {
+        if (noticeBanner == null || event == null) {
+            return false;
+        }
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                noticeTouchStartY = event.getRawY();
+                noticeHandler.removeCallbacks(hideNoticeRunnable);
+                noticeBanner.animate().cancel();
+                return true;
+            case MotionEvent.ACTION_MOVE:
+                float deltaY = event.getRawY() - noticeTouchStartY;
+                if (deltaY < 0) {
+                    float translation = Math.max(deltaY, -dp(72));
+                    noticeBanner.setTranslationY(translation);
+                    noticeBanner.setAlpha(Math.max(0.45f, 1f + translation / dp(120)));
+                }
+                return true;
+            case MotionEvent.ACTION_UP:
+                float totalDeltaY = event.getRawY() - noticeTouchStartY;
+                if (totalDeltaY < -dp(34)) {
+                    hideInAppNotice();
+                    return true;
+                }
+                noticeBanner.animate().translationY(0f).alpha(1f).setDuration(120L).start();
+                noticeHandler.postDelayed(hideNoticeRunnable, NOTICE_AUTO_HIDE_MS);
+                if (Math.abs(totalDeltaY) < dp(8)) {
+                    openNoticeDestination();
+                }
+                return true;
+            case MotionEvent.ACTION_CANCEL:
+                noticeBanner.animate().translationY(0f).alpha(1f).setDuration(120L).start();
+                noticeHandler.postDelayed(hideNoticeRunnable, NOTICE_AUTO_HIDE_MS);
+                return true;
+            default:
+                return true;
+        }
+    }
+
+    private void hideInAppNotice() {
+        if (noticeBanner == null) {
+            return;
+        }
+        noticeHandler.removeCallbacks(hideNoticeRunnable);
+        noticeBanner.animate().cancel();
+        noticeBanner.setVisibility(View.GONE);
+        noticeBanner.setAlpha(1f);
+        noticeBanner.setTranslationY(0f);
+    }
+
+    private void openNoticeDestination() {
+        hideInAppNotice();
+        if (!noticeSessionId.isEmpty()) {
+            openNoticeSession(noticeSessionId, noticeSessionTitle);
+            return;
+        }
+        showChat();
+        scrollToBottom(scrollView);
+    }
+
+    private void handleNoticeIntent(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        String destination = intent.getStringExtra(EXTRA_NOTICE_DESTINATION);
+        String sessionId = intent.getStringExtra(EXTRA_NOTICE_SESSION_ID);
+        String sessionTitle = intent.getStringExtra(EXTRA_NOTICE_SESSION_TITLE);
+        if (sessionId != null && !sessionId.trim().isEmpty()) {
+            openNoticeSession(sessionId.trim(), sessionTitle == null ? "" : sessionTitle.trim());
+            return;
+        }
+        if (TAB_HERMES.equals(destination)) {
+            showChat();
+            scrollToBottom(scrollView);
+        }
+    }
+
+    private void openNoticeSession(String sessionId, String sessionTitle) {
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            showChat();
+            return;
+        }
+        String previousSessionId = selectedCodexSessionId;
+        selectedCodexSessionId = sessionId.trim();
+        if (sessionTitle != null && !sessionTitle.trim().isEmpty()) {
+            selectedCodexSessionTitle = sessionTitle.trim();
+        } else if (!selectedCodexSessionId.equals(previousSessionId)) {
+            selectedCodexSessionTitle = "";
+        }
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(KEY_CODEX_SESSION_ID, selectedCodexSessionId)
+                .putString(KEY_CODEX_SESSION_TITLE, selectedCodexSessionTitle)
+                .apply();
+        showSessionChat();
     }
 
     private static class ImagePayload {

@@ -12,8 +12,8 @@ Native Android client and relay-side source for the private YuanXiao bridge used
 
 ## Current Source Line
 
-- Current app version: `0.44`
-- Delivery APK name: `yuanxiao-0.44.apk`
+- Current app version: `0.45`
+- Delivery APK name: `yuanxiao-0.45.apk`
 - Latest Quark delivery APK: `yuanxiao-0.42.apk`
 - Installed Android app label: `元宵`
 - Public relay: configured locally through `android/YuanXiao/local.properties` and `ops/config/yuanxiao.env`.

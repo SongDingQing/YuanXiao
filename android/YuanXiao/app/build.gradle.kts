@@ -39,8 +39,8 @@ android {
         applicationId = "com.example.yuanxiao"
         minSdk = 24
         targetSdk = 36
-        versionCode = 47
-        versionName = "0.47"
+        versionCode = 48
+        versionName = "0.48"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "YUANXIAO_RELAY_BASE_URL", quotedBuildConfigValue(yuanxiaoRelayBaseUrl))

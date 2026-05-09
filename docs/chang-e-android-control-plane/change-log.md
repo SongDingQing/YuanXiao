@@ -1,5 +1,15 @@
 # YuanXiao Change Log
 
+## 0.48
+
+- Optimized the Codex-session receipt path so a server echo for an already visible outgoing message updates the receipt state without forcing a full session chat re-render.
+- Kept full re-render only for matched non-user local messages or attachment-count changes where visual content may differ.
+- Deferred larger chat virtualization and API-v1 message migration because they need broader device and server compatibility validation.
+- Built and signature-verified `yuanxiao-0.48.apk`; SHA256 `2822b1af7990326f0194efe86196f330ef594d8a25c4106c2e54b0a94af5c440`.
+- Public `/health` and Codex session-list smoke tests returned `status=ok` with file/db-only read paths.
+- Uploaded `yuanxiao-0.48.apk` to the existing Quark root/home `元宵` folder; Quark showed it in that folder with timestamp 2026-05-09 21:43.
+- Included this source update in the standard GitHub delivery push for `SongDingQing/YuanXiao`.
+
 ## 0.47
 
 - Added a tiny hollow-circle receipt indicator below outgoing user messages in dedicated Codex-session chats.

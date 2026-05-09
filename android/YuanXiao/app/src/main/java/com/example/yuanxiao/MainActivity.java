@@ -620,7 +620,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.47", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.48", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -3523,6 +3523,8 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.48", "煮元宵优化回执确认避免整页重绘。"));
+        v0.entries.add(new ReleaseEntry("0.48", "打包上传并同步 GitHub 交付。"));
         v0.entries.add(new ReleaseEntry("0.47", "Session 发送消息增加空圆圈回执。"));
         v0.entries.add(new ReleaseEntry("0.47", "嫦娥确认收到后回执变为打勾。"));
         v0.entries.add(new ReleaseEntry("0.46", "Session 同步状态移到标题区域。"));
@@ -4198,6 +4200,7 @@ public class MainActivity extends Activity {
             }
             SessionChatMessage localMatch = findMatchingLocalSessionMessage(history, incoming);
             if (localMatch != null) {
+                boolean renderNeeded = !localMatch.mine || localMatch.attachments.size() != incoming.attachments.size();
                 localMatch.id = incoming.id;
                 localMatch.speaker = incoming.speaker;
                 localMatch.text = incoming.text;
@@ -4210,7 +4213,9 @@ public class MainActivity extends Activity {
                     markLatestSessionReceiptRead(sessionId);
                 }
                 result.changed = true;
-                result.needsFullRender = true;
+                if (renderNeeded) {
+                    result.needsFullRender = true;
+                }
                 continue;
             }
             history.add(incoming);

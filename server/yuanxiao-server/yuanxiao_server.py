@@ -157,7 +157,7 @@ def forward_to_hermes_bridge(payload: dict[str, object], conversation: str) -> t
         "message": str(payload.get("message") or ""),
         "conversation": conversation,
     }
-    for key in ("target", "route", "codex_session_id", "image_base64", "image_mime_type", "image_name"):
+    for key in ("target", "route", "codex_session_id", "task_id", "image_base64", "image_mime_type", "image_name"):
         if payload.get(key):
             forward_payload[key] = payload[key]
     request = urllib.request.Request(
@@ -248,6 +248,10 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
                     "plan_reporting_policy": "change_only",
                     "task_queue": True,
                     "task_queue_scope": "session_chat",
+                    "task_ledger": True,
+                    "stuck_task_detection": True,
+                    "task_events_api": True,
+                    "task_agents_api": True,
                     "queue_reorder": "queued_only",
                     "async_chat_default": ASYNC_CHAT_DEFAULT,
                     "bridge_timeout_seconds": HERMES_BRIDGE_TIMEOUT_SECONDS,
@@ -332,6 +336,25 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             response.setdefault("time", now_iso())
             self._send_json(response, status=status)
             return
+        if parsed.path in {"/api/v1/tasks", "/api/tasks", "/api/v1/events", "/api/events", "/api/v1/agents", "/api/agents"}:
+            try:
+                status, response = forward_bridge_get(parsed.path, parsed.query)
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "task_ledger_unavailable",
+                        "detail": str(exc),
+                        "server": "change",
+                        "time": now_iso(),
+                    },
+                    status=504,
+                )
+                return
+            response["server"] = "change"
+            response.setdefault("time", now_iso())
+            self._send_json(response, status=status)
+            return
         if parsed.path == "/api/codex/session/messages":
             try:
                 status, response = forward_bridge_get("/api/codex/session/messages", parsed.query)
@@ -379,6 +402,7 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             "/api/plan/ceo/request",
             "/api/plan/ceo/session",
             "/api/queue/reorder",
+            "/api/v1/tasks",
         }:
             try:
                 payload = self._read_json_payload()
@@ -468,7 +492,9 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
 
         def worker() -> None:
             try:
-                status, response = forward_to_hermes_bridge(payload, conversation)
+                forward_payload = dict(payload)
+                forward_payload["task_id"] = task_id
+                status, response = forward_to_hermes_bridge(forward_payload, conversation)
             except Exception as exc:
                 status, response = (
                     504,

@@ -1,5 +1,17 @@
 # YuanXiao Change Log
 
+## 0.42
+
+- Added `change_scheduler.py`, a durable SQLite task ledger for ChangE/YuanXiao task cards, task events, static agent registry, and stale-task blocking.
+- Added public/bridge `/api/v1/tasks`, `/api/v1/events`, and `/api/v1/agents` routes; `/health` now advertises task ledger, stuck detection, event API, and agent API support.
+- Added a bottom `任务` tab in the APK with compact task cards, progress bars, latest event text, blocker/error fields, and 12-second polling only while visible.
+- Task cards sort blocked/failed work first, then newest same-status updates first so old tasks do not bury fresh activity.
+- Codex/image/session async requests now create/update task cards and return `task_id`; background receipt chatter stays in status/notice areas instead of crowding the main chat stream.
+- Link optimization: status/task reads use shorter timeouts, POST paths close connections explicitly, and the Android executor pool was widened so polling and sending do not block each other as easily.
+- Built and signature-verified `yuanxiao-0.42.apk`; SHA256 `35fa651ba18ca90e713e3e45ff59741271c7de69990104795a92cca5d4418c67`.
+- Public task-center smoke test returned `status=ok`, `source=change-task-ledger+compat`, task summary data, and health flags for task ledger/event/agent APIs.
+- Uploaded `yuanxiao-0.42.apk` to the existing Quark root/home `元宵` folder; Quark showed it in that folder with timestamp 2026-05-09 10:49.
+
 ## 0.41
 
 - Optimized the `煮元宵` session-history path so initial Codex-session sync no longer forces a full chat re-render when nothing changed.

@@ -25,6 +25,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+import change_scheduler
+
 
 BRIDGE_DIR = Path(os.environ.get("YUANXIAO_BRIDGE_DIR", str(Path(__file__).resolve().parent)))
 HOST = os.environ.get("YUANXIAO_BRIDGE_HOST", "localhost")
@@ -903,6 +905,140 @@ def reorder_handoff_queue_tasks(queue_ids: Any) -> dict[str, Any]:
     payload = read_handoff_queue_tasks(MAX_QUEUE_TASKS)
     payload["reordered"] = changed
     payload["reorder_effect"] = "queued_tasks_next_pick"
+    return payload
+
+
+def change_task_timestamp(value: Any) -> float:
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        normalized = text.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+    except Exception:
+        return 0.0
+
+
+def change_task_sort_key(task: dict[str, Any]) -> tuple[int, float]:
+    status = str(task.get("status") or "").strip().lower()
+    rank = {
+        "blocked": 0,
+        "failed": 1,
+        "running": 2,
+        "received": 3,
+        "queued": 4,
+        "waiting_external": 5,
+        "completed": 6,
+    }.get(status, 7)
+    return rank, -change_task_timestamp(task.get("updated_at") or task.get("heartbeat_at") or task.get("created_at"))
+
+
+def task_card_from_queue(item: dict[str, Any]) -> dict[str, Any]:
+    status = str(item.get("status") or "queued").strip().lower()
+    progress = 40 if status == "running" else 0
+    queue_id = str(item.get("queue_id") or "")
+    return {
+        "task_id": f"handoff:{queue_id}",
+        "title": str(item.get("task_summary") or "Codex handoff"),
+        "kind": "codex-handoff",
+        "route": "codex",
+        "status": status,
+        "status_label": str(item.get("status_label") or ""),
+        "progress": progress,
+        "project_id": "",
+        "agent_id": str(item.get("agent_id") or ""),
+        "conversation": str(item.get("conversation_id") or ""),
+        "codex_session_id": str(item.get("codex_session_id") or ""),
+        "source": "hermes-codex-handoff",
+        "message_preview": str(item.get("task_preview") or item.get("source_preview") or ""),
+        "latest_event": str(item.get("message") or item.get("status_label") or "来自 Hermes/Codex handoff 队列。"),
+        "result_preview": "",
+        "error": str(item.get("message") or "") if status == "failed" else "",
+        "created_at": str(item.get("queued_at") or ""),
+        "updated_at": str(item.get("updated_at") or item.get("started_at") or item.get("queued_at") or ""),
+        "heartbeat_at": str(item.get("updated_at") or item.get("started_at") or ""),
+        "age_seconds": 0,
+        "heartbeat_age_seconds": 0,
+        "stale": False,
+    }
+
+
+def task_card_from_plan(project: dict[str, Any]) -> dict[str, Any]:
+    status = str(project.get("status") or "queued").strip().lower()
+    project_id = str(project.get("id") or "")
+    ceo = project.get("ceo") if isinstance(project.get("ceo"), dict) else {}
+    return {
+        "task_id": f"plan:{project_id}",
+        "title": str(project.get("title") or "计划"),
+        "kind": "plan",
+        "route": "change",
+        "status": status,
+        "status_label": "",
+        "progress": normalized_progress(project.get("progress", 0)),
+        "project_id": project_id,
+        "agent_id": str(ceo.get("id") or ""),
+        "conversation": "",
+        "codex_session_id": str(ceo.get("session_id") or ""),
+        "source": "plan-state-file",
+        "message_preview": str(project.get("objective") or project.get("latest_request") or ""),
+        "latest_event": str(project.get("last_report") or "计划由嫦娥统一汇报。"),
+        "result_preview": "",
+        "error": str(project.get("last_report") or "") if status in {"blocked", "failed"} else "",
+        "created_at": "",
+        "updated_at": str(project.get("updated_at") or ""),
+        "heartbeat_at": str(project.get("updated_at") or ""),
+        "age_seconds": 0,
+        "heartbeat_age_seconds": 0,
+        "stale": False,
+    }
+
+
+def read_change_task_cards(limit: int = 50, status_filter: str = "") -> dict[str, Any]:
+    payload = change_scheduler.list_tasks(limit, status_filter)
+    tasks = list(payload.get("tasks") or [])
+    seen = {str(task.get("task_id") or "") for task in tasks}
+    wanted_status = str(status_filter or "").strip().lower()
+
+    try:
+        queue_payload = read_handoff_queue_tasks(MAX_QUEUE_TASKS)
+        for item in queue_payload.get("tasks", []):
+            if not isinstance(item, dict):
+                continue
+            card = task_card_from_queue(item)
+            if wanted_status and card.get("status") != wanted_status:
+                continue
+            if card["task_id"] not in seen:
+                tasks.append(card)
+                seen.add(card["task_id"])
+    except Exception:
+        pass
+
+    try:
+        plan_payload = read_plan_projects(10)
+        for project in plan_payload.get("projects", []):
+            if not isinstance(project, dict):
+                continue
+            if str(project.get("status") or "").strip().lower() in {"completed"}:
+                continue
+            card = task_card_from_plan(project)
+            if wanted_status and card.get("status") != wanted_status:
+                continue
+            if card["task_id"] not in seen:
+                tasks.append(card)
+                seen.add(card["task_id"])
+    except Exception:
+        pass
+
+    tasks.sort(key=change_task_sort_key)
+    tasks = tasks[: max(1, min(100, int(limit or 50)))]
+    payload["tasks"] = tasks
+    payload["summary"] = change_scheduler.summarize_tasks(tasks)
+    payload["source"] = "change-task-ledger+compat"
+    payload["quota_cost"] = "none_db_file_scan_only"
+    payload["compat_sources"] = ["task-ledger", "hermes-codex-handoff", "plan-state"]
     return payload
 
 
@@ -2190,6 +2326,10 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                     "plan_smoke_test_complete": True,
                     "task_queue": True,
                     "task_queue_scope": "session_chat",
+                    "task_ledger": True,
+                    "stuck_task_detection": True,
+                    "task_events_api": True,
+                    "task_agents_api": True,
                     "queue_reorder": "queued_only",
                     "image_input": "enabled",
                     "image_recognition": "change-vision",
@@ -2216,6 +2356,27 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             session_id = str((query.get("session_id") or [""])[0]).strip()
             session_title = str((query.get("session_title") or [""])[0]).strip()
             self._send_json(read_handoff_queue_tasks(limit, session_id=session_id, session_title=session_title))
+            return
+        if parsed.path in {"/api/v1/tasks", "/api/tasks"}:
+            query = urllib.parse.parse_qs(parsed.query)
+            try:
+                limit = max(1, min(100, int((query.get("limit") or ["50"])[0])))
+            except ValueError:
+                limit = 50
+            status_filter = str((query.get("status") or [""])[0]).strip()
+            self._send_json(read_change_task_cards(limit, status_filter))
+            return
+        if parsed.path in {"/api/v1/events", "/api/events"}:
+            query = urllib.parse.parse_qs(parsed.query)
+            try:
+                limit = max(1, min(200, int((query.get("limit") or ["80"])[0])))
+            except ValueError:
+                limit = 80
+            task_id = str((query.get("task_id") or [""])[0]).strip()
+            self._send_json(change_scheduler.list_events(task_id, limit))
+            return
+        if parsed.path in {"/api/v1/agents", "/api/agents"}:
+            self._send_json(change_scheduler.list_agents())
             return
         if parsed.path == "/api/plan/projects":
             query = urllib.parse.parse_qs(parsed.query)
@@ -2250,6 +2411,7 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path not in {
             "/api/chat",
+            "/api/v1/tasks",
             "/api/codex/session/create",
             "/api/codex/session/rename",
             "/api/plan/agent/create",
@@ -2278,6 +2440,29 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             payload = json.loads(raw or "{}")
         except Exception:
             self._send_json({"error": "invalid_json"}, status=400)
+            return
+
+        if parsed.path == "/api/v1/tasks":
+            task_id = str(payload.get("task_id") or "").strip()
+            if not task_id:
+                task_id = f"task_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+            task = change_scheduler.upsert_task(
+                task_id,
+                title=str(payload.get("title") or payload.get("message") or "元宵任务"),
+                kind=str(payload.get("kind") or "manual"),
+                route=str(payload.get("route") or "auto"),
+                status=str(payload.get("status") or "queued"),
+                progress=safe_int(payload.get("progress"), 0),
+                project_id=str(payload.get("project_id") or ""),
+                agent_id=str(payload.get("agent_id") or ""),
+                conversation=str(payload.get("conversation") or ""),
+                codex_session_id=str(payload.get("codex_session_id") or ""),
+                source="yuanxiao-api",
+                message=str(payload.get("message") or payload.get("prompt") or ""),
+                latest_event="元宵已创建任务卡。",
+                metadata={"created_by": "yuanxiao"},
+            )
+            self._send_json({"status": "ok", "task": task, "time": now_iso()})
             return
 
         if parsed.path == "/api/plan/agent/create":
@@ -2469,6 +2654,26 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
         conversation = str(payload.get("conversation") or DEFAULT_CONVERSATION).strip() or DEFAULT_CONVERSATION
         target = normalize_chat_target(payload.get("target") or payload.get("route"), image_base64)
         codex_session_id = str(payload.get("codex_session_id") or "").strip()
+        task_id = str(payload.get("task_id") or "").strip()
+        track_task = bool(task_id) or target == "codex" or bool(image_base64) or bool(codex_session_id)
+        if track_task and not task_id:
+            task_id = f"chat_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+        if track_task:
+            task_title = "嫦娥识图" if image_base64 else ("Codex session 对话" if codex_session_id else "Codex 专业请求")
+            change_scheduler.upsert_task(
+                task_id,
+                title=task_title,
+                kind="vision" if image_base64 else "chat",
+                route=target,
+                status="running",
+                progress=10,
+                conversation=conversation,
+                codex_session_id=codex_session_id,
+                source="yuanxiao-chat",
+                message=message or "[图片]",
+                latest_event="嫦娥已接收并交给 Mac mini bridge 处理。",
+                metadata={"has_image": bool(image_base64)},
+            )
 
         started = time.monotonic()
         append_bridge_request_log(
@@ -2492,6 +2697,14 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             )
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")[:1000]
+            if track_task:
+                change_scheduler.update_task_status(
+                    task_id,
+                    "failed",
+                    progress=100,
+                    latest_event=f"上游 HTTP 错误：{exc.code}",
+                    error=f"HTTP {exc.code}",
+                )
             append_bridge_request_log(
                 {
                     "event": "chat_error",
@@ -2515,6 +2728,14 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             )
             return
         except Exception as exc:
+            if track_task:
+                change_scheduler.update_task_status(
+                    task_id,
+                    "failed",
+                    progress=100,
+                    latest_event="处理失败，已记录到任务卡。",
+                    error=str(exc),
+                )
             append_bridge_request_log(
                 {
                     "event": "chat_error",
@@ -2538,6 +2759,16 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
             return
 
         duration_ms = int((time.monotonic() - started) * 1000)
+        task_record = None
+        if track_task:
+            task_record = change_scheduler.update_task_status(
+                task_id,
+                "completed",
+                progress=100,
+                latest_event="嫦娥已完成后台处理。",
+                result_preview=reply,
+                metadata={"duration_ms": duration_ms, "engine": vision_engine, "source": source},
+            )
         append_bridge_request_log(
             {
                 "event": "chat_ok",
@@ -2557,6 +2788,8 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                 "target": target,
                 "route": target,
                 "capability": "change-vision" if image_base64 else ("codex-chat" if target == "codex" else "chat"),
+                "task_id": task_id,
+                "task": task_record or {},
                 "engine": vision_engine,
                 "vision_engine": vision_engine if image_base64 else "",
                 "received": message,

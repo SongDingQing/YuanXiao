@@ -19,9 +19,9 @@ Use the example config files as templates.
 
 ## Current Version
 
-- App version: `0.41`
-- Local build APK name: `yuanxiao-0.41.apk`
-- Latest Quark delivery APK: `yuanxiao-0.41.apk`
+- App version: `0.42`
+- Local build APK name: `yuanxiao-0.42.apk`
+- Latest Quark delivery APK: `yuanxiao-0.42.apk`
 - Installed Android label: `元宵`
 - Latest major behavior: bottom Hermes/Codex/Plan tabs, compact Codex session
   rows, persistent main ChangE chat, Codex session chat/history sync, Codex
@@ -33,4 +33,6 @@ Use the example config files as templates.
   session-scoped request queues inside each Codex session chat, optimized
   session-queue polling/rendering, direct CEO chat entry from each plan, and
   cleaner Codex session chat where ChangE transport receipts stay out of the
-  message stream, plus lighter initial session-history rendering.
+  message stream, lighter initial session-history rendering, plus the first
+  ChangE task-center tab backed by a durable task ledger, event API, agent
+  registry, and stale-task blocking.

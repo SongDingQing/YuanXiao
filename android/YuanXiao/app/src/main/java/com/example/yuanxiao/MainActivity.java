@@ -84,6 +84,7 @@ public class MainActivity extends Activity {
     private static final String PLAN_CEO_REQUEST_URL = endpoint("/api/plan/ceo/request");
     private static final String PLAN_CEO_SESSION_URL = endpoint("/api/plan/ceo/session");
     private static final String QUEUE_REORDER_URL = endpoint("/api/queue/reorder");
+    private static final String TASKS_URL = endpoint("/api/v1/tasks?limit=40");
     private static final String NOTIFICATION_CHANNEL_ID = "yuanxiao_messages";
     private static final String PREFS_NAME = "yuanxiao_state";
     private static final String KEY_LAST_INBOX_ID = "last_inbox_id";
@@ -95,6 +96,7 @@ public class MainActivity extends Activity {
     private static final String TARGET_CODEX = "codex";
     private static final String TAB_HERMES = "hermes";
     private static final String TAB_CODEX = "codex";
+    private static final String TAB_TASKS = "tasks";
     private static final String TAB_PLAN = "plan";
     private static final String MAIN_CHAT_CONVERSATION = "yuanxiao-change-main";
     private static final int REQUEST_PICK_IMAGE = 1001;
@@ -112,6 +114,7 @@ public class MainActivity extends Activity {
     private static final long SESSION_CHAT_POLL_INTERVAL_MS = 15_000L;
     private static final long PLAN_POLL_INTERVAL_MS = 20_000L;
     private static final long QUEUE_POLL_INTERVAL_MS = 15_000L;
+    private static final long TASK_POLL_INTERVAL_MS = 12_000L;
     private static final Pattern MARKDOWN_IMAGE_PATTERN = Pattern.compile("!\\[([^\\]]*)]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\)");
     private static final Pattern MARKDOWN_LINK_PATTERN = Pattern.compile("\\[([^\\]]+)]\\((https?://[^)\\s]+)(?:\\s+\"[^\"]*\")?\\)");
     private static final Pattern RAW_URL_PATTERN = Pattern.compile("https?://\\S+");
@@ -133,12 +136,13 @@ public class MainActivity extends Activity {
     }
 
     private TextView noticeBanner;
-    private final ExecutorService executor = Executors.newFixedThreadPool(2);
+    private final ExecutorService executor = Executors.newFixedThreadPool(4);
     private final Handler inboxHandler = new Handler(Looper.getMainLooper());
     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
     private final Handler sessionChatHandler = new Handler(Looper.getMainLooper());
     private final Handler planHandler = new Handler(Looper.getMainLooper());
     private final Handler queueHandler = new Handler(Looper.getMainLooper());
+    private final Handler taskHandler = new Handler(Looper.getMainLooper());
     private final Handler noticeHandler = new Handler(Looper.getMainLooper());
     private final Runnable hideNoticeRunnable = () -> {
         if (noticeBanner != null) {
@@ -185,6 +189,16 @@ public class MainActivity extends Activity {
             planHandler.postDelayed(this, PLAN_POLL_INTERVAL_MS);
         }
     };
+    private final Runnable taskPollRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!taskVisible) {
+                return;
+            }
+            pollTaskView();
+            taskHandler.postDelayed(this, TASK_POLL_INTERVAL_MS);
+        }
+    };
     private final Runnable queuePollRunnable = new Runnable() {
         @Override
         public void run() {
@@ -199,6 +213,7 @@ public class MainActivity extends Activity {
     private LinearLayout sessionChatView;
     private LinearLayout dashboardView;
     private LinearLayout planView;
+    private LinearLayout taskView;
     private LinearLayout bottomTabBar;
     private LinearLayout dashboardSessionList;
     private TextView dashboardSummary;
@@ -207,6 +222,9 @@ public class MainActivity extends Activity {
     private LinearLayout planProjectList;
     private TextView planSummary;
     private TextView planUpdated;
+    private LinearLayout taskList;
+    private TextView taskSummary;
+    private TextView taskUpdated;
     private LinearLayout sessionQueuePanel;
     private LinearLayout sessionQueueTaskList;
     private TextView sessionQueueSummary;
@@ -214,6 +232,7 @@ public class MainActivity extends Activity {
     private TextView planCreateAgentButton;
     private TextView hermesTabButton;
     private TextView codexTabButton;
+    private TextView taskTabButton;
     private TextView planTabButton;
     private ScrollView scrollView;
     private LinearLayout messageList;
@@ -266,9 +285,11 @@ public class MainActivity extends Activity {
     private boolean dashboardVisible = false;
     private boolean sessionChatVisible = false;
     private boolean planVisible = false;
+    private boolean taskVisible = false;
     private boolean sessionQueueExpanded = true;
     private boolean dashboardErrorLogged = false;
     private boolean planErrorLogged = false;
+    private boolean taskErrorLogged = false;
     private boolean queueErrorLogged = false;
     private boolean dashboardActiveExpanded = true;
     private boolean dashboardRecentExpanded = true;
@@ -279,6 +300,7 @@ public class MainActivity extends Activity {
     private volatile boolean dashboardSyncInFlight = false;
     private volatile boolean sessionSyncInFlight = false;
     private volatile boolean planSyncInFlight = false;
+    private volatile boolean taskSyncInFlight = false;
     private volatile boolean planCreateAgentInFlight = false;
     private volatile boolean planCeoSessionInFlight = false;
     private volatile boolean queueSyncInFlight = false;
@@ -289,6 +311,7 @@ public class MainActivity extends Activity {
     private String selectedCodexSessionId = "";
     private String selectedCodexSessionTitle = "";
     private String lastSessionQueueSignature = "";
+    private String lastTaskListSignature = "";
     private boolean sessionReturnToPlan = false;
     private JSONObject lastDashboardResponse;
     private final List<String> lastPlanProjectIds = new ArrayList<>();
@@ -331,6 +354,7 @@ public class MainActivity extends Activity {
         stopDashboardPolling();
         stopSessionChatPolling();
         stopPlanPolling();
+        stopTaskPolling();
         stopQueuePolling();
         executor.shutdownNow();
         super.onDestroy();
@@ -343,6 +367,9 @@ public class MainActivity extends Activity {
         pollInboxOnce();
         if (dashboardVisible) {
             pollCodexDashboard();
+        }
+        if (taskVisible) {
+            pollTaskView();
         }
         if (sessionChatVisible) {
             syncCurrentSessionMessages(false);
@@ -359,7 +386,7 @@ public class MainActivity extends Activity {
             returnFromSessionChat();
             return;
         }
-        if (dashboardVisible || planVisible) {
+        if (dashboardVisible || planVisible || taskVisible) {
             showChat();
             return;
         }
@@ -427,6 +454,14 @@ public class MainActivity extends Activity {
         dashboardView = buildDashboardView();
         dashboardView.setVisibility(View.GONE);
         screenRoot.addView(dashboardView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+        ));
+
+        taskView = buildTaskView();
+        taskView.setVisibility(View.GONE);
+        screenRoot.addView(taskView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
                 1f
@@ -506,7 +541,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.41", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.42", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -954,6 +989,11 @@ public class MainActivity extends Activity {
         codexParams.leftMargin = dp(8);
         bar.addView(codexTabButton, codexParams);
 
+        taskTabButton = makeBottomTab("任务", TAB_TASKS);
+        LinearLayout.LayoutParams taskParams = weightedHeight(1f, dp(44));
+        taskParams.leftMargin = dp(8);
+        bar.addView(taskTabButton, taskParams);
+
         planTabButton = makeBottomTab("计划", TAB_PLAN);
         LinearLayout.LayoutParams planParams = weightedHeight(1f, dp(44));
         planParams.leftMargin = dp(8);
@@ -967,6 +1007,8 @@ public class MainActivity extends Activity {
         button.setOnClickListener(view -> {
             if (TAB_CODEX.equals(tab)) {
                 showDashboard();
+            } else if (TAB_TASKS.equals(tab)) {
+                showTasks();
             } else if (TAB_PLAN.equals(tab)) {
                 showPlan();
             } else {
@@ -974,6 +1016,78 @@ public class MainActivity extends Activity {
             }
         });
         return button;
+    }
+
+    private LinearLayout buildTaskView() {
+        LinearLayout tasks = new LinearLayout(this);
+        tasks.setOrientation(LinearLayout.VERTICAL);
+        tasks.setPadding(dp(8), dp(8), dp(8), dp(8));
+        tasks.setBackgroundColor(Color.rgb(246, 247, 251));
+
+        LinearLayout headerCard = new LinearLayout(this);
+        headerCard.setOrientation(LinearLayout.VERTICAL);
+        headerCard.setPadding(dp(12), dp(10), dp(12), dp(10));
+        headerCard.setBackground(makePanelBackground(Color.WHITE, dp(18), 1, Color.rgb(228, 233, 241)));
+        tasks.addView(headerCard, matchWrap());
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+
+        TextView title = new TextView(this);
+        title.setText("任务中枢");
+        title.setTextSize(20);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(Color.rgb(26, 32, 43));
+        titleBlock.addView(title);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText("嫦娥任务卡 · 卡住检测 · 后台状态");
+        subtitle.setTextSize(12);
+        subtitle.setTextColor(Color.rgb(91, 101, 116));
+        titleBlock.addView(subtitle);
+        top.addView(titleBlock, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView refreshButton = makeActionChip("刷新", Color.rgb(239, 246, 239), Color.rgb(50, 114, 62));
+        refreshButton.setTextSize(12);
+        refreshButton.setOnClickListener(view -> pollTaskView());
+        top.addView(refreshButton, new LinearLayout.LayoutParams(dp(64), dp(38)));
+        headerCard.addView(top, matchWrap());
+
+        LinearLayout stats = new LinearLayout(this);
+        stats.setOrientation(LinearLayout.HORIZONTAL);
+        stats.setPadding(0, dp(8), 0, 0);
+        taskSummary = makeDashboardStat("读取中", "任务");
+        stats.addView(taskSummary, weightedHeight(1f, dp(38)));
+        taskUpdated = makeDashboardStat("等待刷新", "更新时间");
+        LinearLayout.LayoutParams updatedParams = weightedHeight(1f, dp(38));
+        updatedParams.leftMargin = dp(8);
+        stats.addView(taskUpdated, updatedParams);
+        headerCard.addView(stats, matchWrap());
+
+        taskList = new LinearLayout(this);
+        taskList.setOrientation(LinearLayout.VERTICAL);
+        taskList.setPadding(dp(6), dp(6), dp(6), dp(6));
+        taskList.setBackground(makePanelBackground(Color.WHITE, dp(18), 1, Color.rgb(226, 232, 240)));
+
+        ScrollView taskScroll = new ScrollView(this);
+        taskScroll.setFillViewport(true);
+        taskScroll.addView(taskList, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT
+        ));
+        LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+        );
+        listParams.topMargin = dp(8);
+        tasks.addView(taskScroll, listParams);
+        renderTaskLoading();
+        return tasks;
     }
 
     private LinearLayout buildPlanView() {
@@ -1161,16 +1275,25 @@ public class MainActivity extends Activity {
         showTopLevelTab(TAB_PLAN);
     }
 
+    private void showTasks() {
+        showTopLevelTab(TAB_TASKS);
+    }
+
     private void showTopLevelTab(String tab) {
         boolean showCodex = TAB_CODEX.equals(tab);
+        boolean showTasks = TAB_TASKS.equals(tab);
         boolean showPlan = TAB_PLAN.equals(tab);
         dashboardVisible = showCodex;
+        taskVisible = showTasks;
         planVisible = showPlan;
         sessionChatVisible = false;
         sessionReturnToPlan = false;
         stopSessionChatPolling();
         if (dashboardView != null) {
             dashboardView.setVisibility(showCodex ? View.VISIBLE : View.GONE);
+        }
+        if (taskView != null) {
+            taskView.setVisibility(showTasks ? View.VISIBLE : View.GONE);
         }
         if (planView != null) {
             planView.setVisibility(showPlan ? View.VISIBLE : View.GONE);
@@ -1179,7 +1302,7 @@ public class MainActivity extends Activity {
             sessionChatView.setVisibility(View.GONE);
         }
         if (chatView != null) {
-            chatView.setVisibility(!showCodex && !showPlan ? View.VISIBLE : View.GONE);
+            chatView.setVisibility(!showCodex && !showTasks && !showPlan ? View.VISIBLE : View.GONE);
         }
         if (bottomTabBar != null) {
             bottomTabBar.setVisibility(View.VISIBLE);
@@ -1189,6 +1312,12 @@ public class MainActivity extends Activity {
             pollCodexDashboard();
         } else {
             stopDashboardPolling();
+        }
+        if (showTasks) {
+            startTaskPolling();
+            pollTaskView();
+        } else {
+            stopTaskPolling();
         }
         if (showPlan) {
             startPlanPolling();
@@ -1211,11 +1340,15 @@ public class MainActivity extends Activity {
 
     private void showSessionChat() {
         dashboardVisible = false;
+        taskVisible = false;
         planVisible = false;
         sessionChatVisible = true;
         lastSessionQueueSignature = "";
         if (dashboardView != null) {
             dashboardView.setVisibility(View.GONE);
+        }
+        if (taskView != null) {
+            taskView.setVisibility(View.GONE);
         }
         if (planView != null) {
             planView.setVisibility(View.GONE);
@@ -1230,6 +1363,7 @@ public class MainActivity extends Activity {
             bottomTabBar.setVisibility(View.GONE);
         }
         stopDashboardPolling();
+        stopTaskPolling();
         stopPlanPolling();
         updateSessionHeader();
         renderSessionQueueLoading();
@@ -1247,6 +1381,15 @@ public class MainActivity extends Activity {
 
     private void stopDashboardPolling() {
         dashboardHandler.removeCallbacks(dashboardPollRunnable);
+    }
+
+    private void startTaskPolling() {
+        taskHandler.removeCallbacks(taskPollRunnable);
+        taskHandler.postDelayed(taskPollRunnable, TASK_POLL_INTERVAL_MS);
+    }
+
+    private void stopTaskPolling() {
+        taskHandler.removeCallbacks(taskPollRunnable);
     }
 
     private void startSessionChatPolling() {
@@ -1277,8 +1420,9 @@ public class MainActivity extends Activity {
     }
 
     private void updateBottomTabs() {
-        styleBottomTab(hermesTabButton, !dashboardVisible && !planVisible && !sessionChatVisible);
+        styleBottomTab(hermesTabButton, !dashboardVisible && !taskVisible && !planVisible && !sessionChatVisible);
         styleBottomTab(codexTabButton, dashboardVisible || sessionChatVisible);
+        styleBottomTab(taskTabButton, taskVisible);
         styleBottomTab(planTabButton, planVisible);
     }
 
@@ -1321,6 +1465,21 @@ public class MainActivity extends Activity {
         loading.setGravity(Gravity.CENTER);
         loading.setPadding(dp(12), dp(20), dp(12), dp(20));
         planProjectList.addView(loading, matchWrap());
+    }
+
+    private void renderTaskLoading() {
+        lastTaskListSignature = "";
+        if (taskList == null) {
+            return;
+        }
+        taskList.removeAllViews();
+        TextView loading = new TextView(this);
+        loading.setText("正在读取嫦娥任务账本...");
+        loading.setTextSize(14);
+        loading.setTextColor(Color.rgb(91, 101, 116));
+        loading.setGravity(Gravity.CENTER);
+        loading.setPadding(dp(12), dp(20), dp(12), dp(20));
+        taskList.addView(loading, matchWrap());
     }
 
     private void renderSessionQueueLoading() {
@@ -1380,6 +1539,28 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> renderSessionQueueError(exception.getMessage()));
             } finally {
                 queueSyncInFlight = false;
+            }
+        });
+    }
+
+    private void pollTaskView() {
+        if (taskSyncInFlight) {
+            return;
+        }
+        taskSyncInFlight = true;
+        executor.execute(() -> {
+            try {
+                JSONObject response = getJson(TASKS_URL);
+                runOnUiThread(() -> renderTaskCards(response));
+                taskErrorLogged = false;
+            } catch (Exception exception) {
+                if (!taskErrorLogged) {
+                    taskErrorLogged = true;
+                    appendLogFromWorker("任务中枢同步失败：" + exception.getMessage());
+                }
+                runOnUiThread(() -> renderTaskError(exception.getMessage()));
+            } finally {
+                taskSyncInFlight = false;
             }
         });
     }
@@ -1910,6 +2091,26 @@ public class MainActivity extends Activity {
         planProjectList.addView(error, matchWrap());
     }
 
+    private void renderTaskError(String message) {
+        lastTaskListSignature = "error:" + message;
+        if (taskSummary != null) {
+            taskSummary.setText("不可用\n任务");
+        }
+        if (taskUpdated != null) {
+            taskUpdated.setText(stamp() + "\n更新时间");
+        }
+        if (taskList == null) {
+            return;
+        }
+        taskList.removeAllViews();
+        TextView error = new TextView(this);
+        error.setText("暂时无法读取任务账本：" + message);
+        error.setTextSize(14);
+        error.setTextColor(Color.rgb(166, 63, 40));
+        error.setPadding(dp(12), dp(16), dp(12), dp(16));
+        taskList.addView(error, matchWrap());
+    }
+
     private void renderCodexDashboard(JSONObject response) {
         lastDashboardResponse = response;
         JSONObject process = response.optJSONObject("process");
@@ -1955,6 +2156,77 @@ public class MainActivity extends Activity {
         addDashboardSection("recent", recentSessions);
         addDashboardSection("idle", idleSessions);
         addDashboardSection("archived", archivedSessions);
+    }
+
+    private void renderTaskCards(JSONObject response) {
+        if (taskList == null) {
+            return;
+        }
+        JSONObject summary = response.optJSONObject("summary");
+        int taskCount = summary == null ? 0 : summary.optInt("task_count", 0);
+        int running = summary == null ? 0 : summary.optInt("running_count", 0);
+        int queued = summary == null ? 0 : summary.optInt("queued_count", 0);
+        int blocked = summary == null ? 0 : summary.optInt("blocked_count", 0);
+        int failed = summary == null ? 0 : summary.optInt("failed_count", 0);
+        if (taskSummary != null) {
+            taskSummary.setText(running + " 运行 · " + queued + " 等待\n任务");
+        }
+        if (taskUpdated != null) {
+            String label = response.optString("time", "").trim().isEmpty()
+                    ? stamp()
+                    : formatDashboardTime(response.optString("time", ""));
+            String alert = blocked > 0 ? " · 阻塞 " + blocked : failed > 0 ? " · 失败 " + failed : "";
+            taskUpdated.setText(label + alert + "\n更新时间");
+        }
+        JSONArray tasks = response.optJSONArray("tasks");
+        String signature = taskCardsSignature(tasks);
+        if (signature.equals(lastTaskListSignature)) {
+            return;
+        }
+        lastTaskListSignature = signature;
+        taskList.removeAllViews();
+        if (tasks == null || tasks.length() == 0 || taskCount == 0) {
+            TextView empty = new TextView(this);
+            empty.setText("暂无后台任务。Codex、识图和后续计划调度会显示在这里。");
+            empty.setTextSize(14);
+            empty.setTextColor(Color.rgb(91, 101, 116));
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(12), dp(28), dp(12), dp(28));
+            taskList.addView(empty, matchWrap());
+            return;
+        }
+        for (int i = 0; i < tasks.length(); i++) {
+            JSONObject task = tasks.optJSONObject(i);
+            if (task == null) {
+                continue;
+            }
+            LinearLayout.LayoutParams params = sessionRowParams();
+            taskList.addView(makeTaskCard(task), params);
+        }
+    }
+
+    private String taskCardsSignature(JSONArray tasks) {
+        StringBuilder builder = new StringBuilder();
+        if (tasks == null) {
+            return builder.toString();
+        }
+        for (int i = 0; i < tasks.length(); i++) {
+            JSONObject task = tasks.optJSONObject(i);
+            if (task == null) {
+                continue;
+            }
+            builder.append('|')
+                    .append(task.optString("task_id", ""))
+                    .append(':')
+                    .append(task.optString("status", ""))
+                    .append(':')
+                    .append(task.optInt("progress", 0))
+                    .append(':')
+                    .append(task.optString("updated_at", ""))
+                    .append(':')
+                    .append(task.optString("latest_event", ""));
+        }
+        return builder.toString();
     }
 
     private void renderPlanProjects(JSONObject response) {
@@ -2131,6 +2403,138 @@ public class MainActivity extends Activity {
                     .append(task.optString("task_preview", ""));
         }
         return builder.toString();
+    }
+
+    private LinearLayout makeTaskCard(JSONObject task) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        boolean blocked = "blocked".equals(task.optString("status", "").toLowerCase(Locale.US))
+                || task.optBoolean("stale", false);
+        int stroke = blocked ? Color.rgb(238, 184, 174) : Color.rgb(229, 234, 242);
+        card.setPadding(dp(10), dp(9), dp(10), dp(9));
+        card.setBackground(makePanelBackground(Color.rgb(247, 249, 252), dp(14), 1, stroke));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = new TextView(this);
+        title.setText(firstNonEmpty(task.optString("title", ""), task.optString("message_preview", ""), "未命名任务"));
+        title.setTextSize(15);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(Color.rgb(29, 36, 48));
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        top.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView status = makeTaskStatusBadge(task.optString("status", ""));
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(dp(68), dp(28));
+        statusParams.leftMargin = dp(8);
+        top.addView(status, statusParams);
+        card.addView(top, matchWrap());
+
+        LinearLayout progressRow = new LinearLayout(this);
+        progressRow.setOrientation(LinearLayout.HORIZONTAL);
+        progressRow.setGravity(Gravity.CENTER_VERTICAL);
+        progressRow.setPadding(0, dp(7), 0, 0);
+        progressRow.addView(makeProgressBar(progressFromJson(task)), new LinearLayout.LayoutParams(0, dp(8), 1f));
+        TextView updated = new TextView(this);
+        updated.setText(formatDashboardTime(task.optString("updated_at", "")));
+        updated.setTextSize(11);
+        updated.setTextColor(Color.rgb(112, 121, 137));
+        updated.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams updatedParams = new LinearLayout.LayoutParams(dp(82), LinearLayout.LayoutParams.WRAP_CONTENT);
+        updatedParams.leftMargin = dp(8);
+        progressRow.addView(updated, updatedParams);
+        card.addView(progressRow, matchWrap());
+
+        String preview = firstNonEmpty(
+                compactOneLine(task.optString("latest_event", ""), 100),
+                compactOneLine(task.optString("result_preview", ""), 100),
+                compactOneLine(task.optString("message_preview", ""), 100),
+                "暂无任务事件"
+        );
+        TextView event = new TextView(this);
+        event.setText(preview);
+        event.setTextSize(12);
+        event.setTextColor(blocked ? Color.rgb(166, 63, 40) : Color.rgb(91, 101, 116));
+        event.setSingleLine(true);
+        event.setEllipsize(TextUtils.TruncateAt.END);
+        event.setPadding(0, dp(6), 0, 0);
+        card.addView(event, matchWrap());
+
+        String route = firstNonEmpty(task.optString("route", ""), task.optString("kind", ""), "auto");
+        String session = compactOneLine(task.optString("codex_session_id", ""), 8);
+        String taskId = compactOneLine(task.optString("task_id", ""), 18);
+        TextView meta = new TextView(this);
+        meta.setText(route + (session.isEmpty() ? "" : " · session " + session) + " · " + taskId);
+        meta.setTextSize(11);
+        meta.setTextColor(Color.rgb(112, 121, 137));
+        meta.setSingleLine(true);
+        meta.setEllipsize(TextUtils.TruncateAt.END);
+        meta.setPadding(0, dp(5), 0, 0);
+        card.addView(meta, matchWrap());
+
+        String error = task.optString("error", "").trim();
+        if (blocked && !error.isEmpty()) {
+            TextView blocker = new TextView(this);
+            blocker.setText(compactOneLine(error, 120));
+            blocker.setTextSize(12);
+            blocker.setTextColor(Color.rgb(166, 63, 40));
+            blocker.setPadding(0, dp(5), 0, 0);
+            blocker.setSingleLine(true);
+            blocker.setEllipsize(TextUtils.TruncateAt.END);
+            card.addView(blocker, matchWrap());
+        }
+        return card;
+    }
+
+    private TextView makeTaskStatusBadge(String status) {
+        String normalized = status == null ? "" : status.trim().toLowerCase(Locale.US);
+        int bg = Color.rgb(241, 242, 245);
+        int fg = Color.rgb(102, 111, 125);
+        if ("running".equals(normalized)) {
+            bg = Color.rgb(232, 247, 240);
+            fg = Color.rgb(20, 120, 82);
+        } else if ("queued".equals(normalized) || "received".equals(normalized)) {
+            bg = Color.rgb(236, 243, 249);
+            fg = Color.rgb(38, 83, 111);
+        } else if ("blocked".equals(normalized) || "failed".equals(normalized)) {
+            bg = Color.rgb(255, 240, 235);
+            fg = Color.rgb(166, 63, 40);
+        } else if ("completed".equals(normalized)) {
+            bg = Color.rgb(239, 246, 239);
+            fg = Color.rgb(50, 114, 62);
+        }
+        TextView badge = makeBadge(taskStatusLabel(normalized), bg, fg);
+        badge.setTextSize(11);
+        return badge;
+    }
+
+    private String taskStatusLabel(String status) {
+        String normalized = status == null ? "" : status.trim().toLowerCase(Locale.US);
+        if ("running".equals(normalized)) {
+            return "运行";
+        }
+        if ("received".equals(normalized)) {
+            return "收到";
+        }
+        if ("queued".equals(normalized)) {
+            return "等待";
+        }
+        if ("blocked".equals(normalized)) {
+            return "阻塞";
+        }
+        if ("failed".equals(normalized)) {
+            return "失败";
+        }
+        if ("completed".equals(normalized)) {
+            return "完成";
+        }
+        if ("cancelled".equals(normalized) || "canceled".equals(normalized)) {
+            return "取消";
+        }
+        return "任务";
     }
 
     private LinearLayout makePlanProjectCard(JSONObject project) {
@@ -2921,6 +3325,11 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.42", "新增嫦娥任务中枢任务卡。"));
+        v0.entries.add(new ReleaseEntry("0.42", "Codex 后台请求接入任务账本。"));
+        v0.entries.add(new ReleaseEntry("0.42", "卡住任务会自动标记阻塞。"));
+        v0.entries.add(new ReleaseEntry("0.42", "后台回执不再挤进主聊天流。"));
+        v0.entries.add(new ReleaseEntry("0.42", "任务和状态读取使用更短超时。"));
         v0.entries.add(new ReleaseEntry("0.41", "煮元宵优化 session 初始同步重绘。"));
         v0.entries.add(new ReleaseEntry("0.41", "无新增历史时不再整页刷新聊天。"));
         v0.entries.add(new ReleaseEntry("0.41", "长 session 打开和同步更稳。"));
@@ -3784,8 +4193,11 @@ public class MainActivity extends Activity {
             String taskId = response.optString("task_id", "");
             appendLogFromWorker(taskId.isEmpty() ? "嫦娥已转入后台处理。" : "嫦娥后台任务：" + taskId);
             runOnUiThread(() -> {
-                appendTextMessage("嫦娥", reply, false, null, new ArrayList<>());
+                showInAppNotice("嫦娥已收到", reply);
                 setDeliveryBackground();
+                if (taskVisible) {
+                    pollTaskView();
+                }
             });
             return;
         }
@@ -3879,7 +4291,12 @@ public class MainActivity extends Activity {
         if (response.optBoolean("async", false)) {
             String taskId = response.optString("task_id", "");
             appendLogFromWorker(taskId.isEmpty() ? "Codex session 已转入后台处理。" : "Codex session 后台任务：" + taskId);
-            runOnUiThread(() -> setSessionDeliveryBackground());
+            runOnUiThread(() -> {
+                setSessionDeliveryBackground();
+                if (taskVisible) {
+                    pollTaskView();
+                }
+            });
             return;
         }
         List<MessageAttachment> attachments = attachmentsFromJson(response.optJSONArray("files"));
@@ -3916,7 +4333,7 @@ public class MainActivity extends Activity {
     }
 
     private JSONObject getJson(String targetUrl) throws Exception {
-        HttpsURLConnection connection = openConnection(targetUrl);
+        HttpsURLConnection connection = openConnection(targetUrl, 60_000);
         connection.setRequestMethod("GET");
         return readJson(connection);
     }
@@ -3939,10 +4356,15 @@ public class MainActivity extends Activity {
     }
 
     private HttpsURLConnection openConnection(String targetUrl) throws Exception {
+        return openConnection(targetUrl, 900_000);
+    }
+
+    private HttpsURLConnection openConnection(String targetUrl, int readTimeoutMs) throws Exception {
         URL url = new URL(targetUrl);
         HttpsURLConnection connection = (HttpsURLConnection) url.openConnection();
         connection.setConnectTimeout(10_000);
-        connection.setReadTimeout(900_000);
+        connection.setReadTimeout(readTimeoutMs);
+        connection.setRequestProperty("Connection", "close");
         return connection;
     }
 

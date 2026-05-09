@@ -33,13 +33,17 @@ import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.text.util.Linkify;
 import android.util.Base64;
+import android.view.ActionMode;
 import android.view.Gravity;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -88,6 +92,7 @@ public class MainActivity extends Activity {
     private static final String NOTIFICATION_CHANNEL_ID = "yuanxiao_messages";
     private static final String PREFS_NAME = "yuanxiao_state";
     private static final String KEY_LAST_INBOX_ID = "last_inbox_id";
+    private static final int MENU_QUOTE_SELECTION = 8101;
     private static final String KEY_CHAT_TARGET = "chat_target";
     private static final String KEY_CODEX_SESSION_ID = "codex_session_id";
     private static final String KEY_CODEX_SESSION_TITLE = "codex_session_title";
@@ -261,12 +266,18 @@ public class MainActivity extends Activity {
     private TextView healthButton;
     private TextView composerOptionsButton;
     private LinearLayout composerOptionsPanel;
+    private LinearLayout mainQuotePanel;
+    private TextView mainQuotePreview;
+    private TextView mainQuoteClearButton;
     private TextView hermesTargetButton;
     private TextView codexTargetButton;
     private TextView deliveryStatusBar;
     private TextView codexSessionLabel;
     private TextView clearCodexSessionButton;
     private EditText sessionInput;
+    private LinearLayout sessionQuotePanel;
+    private TextView sessionQuotePreview;
+    private TextView sessionQuoteClearButton;
     private TextView sessionDeliveryStatusBar;
     private TextView sessionSendButton;
     private TextView sessionClearButton;
@@ -274,6 +285,8 @@ public class MainActivity extends Activity {
     private String pendingImageBase64;
     private String pendingImageMimeType;
     private Bitmap pendingImageBitmap;
+    private String pendingMainQuoteText = "";
+    private String pendingSessionQuoteText = "";
     private int notificationId = 2000;
     private int logCount = 0;
     private boolean logPanelVisible = false;
@@ -541,7 +554,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.42", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.44", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -674,9 +687,16 @@ public class MainActivity extends Activity {
         selectedImagePanel.addView(clearImageButton, new LinearLayout.LayoutParams(dp(66), dp(40)));
         composer.addView(selectedImagePanel, matchWrap());
 
+        mainQuotePreview = makeQuotePreviewText();
+        mainQuoteClearButton = makeQuoteClearButton();
+        mainQuoteClearButton.setOnClickListener(view -> clearPendingQuote(false));
+        mainQuotePanel = makeQuotePanel(mainQuotePreview, mainQuoteClearButton);
+        composer.addView(mainQuotePanel, matchWrap());
+
         input = new EditText(this);
         input.setHint("给嫦娥发消息...");
         input.setSingleLine(false);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setMinLines(2);
         input.setMaxLines(4);
         input.setTextSize(16);
@@ -921,9 +941,16 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams composerParams = matchWrap();
         composerParams.topMargin = dp(10);
 
+        sessionQuotePreview = makeQuotePreviewText();
+        sessionQuoteClearButton = makeQuoteClearButton();
+        sessionQuoteClearButton.setOnClickListener(view -> clearPendingQuote(true));
+        sessionQuotePanel = makeQuotePanel(sessionQuotePreview, sessionQuoteClearButton);
+        composer.addView(sessionQuotePanel, matchWrap());
+
         sessionInput = new EditText(this);
         sessionInput.setHint("发给当前 Codex session...");
         sessionInput.setSingleLine(false);
+        sessionInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         sessionInput.setMinLines(2);
         sessionInput.setMaxLines(4);
         sessionInput.setTextSize(16);
@@ -3225,6 +3252,40 @@ public class MainActivity extends Activity {
         return chip;
     }
 
+    private LinearLayout makeQuotePanel(TextView preview, TextView clearButton) {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.HORIZONTAL);
+        panel.setGravity(Gravity.CENTER_VERTICAL);
+        panel.setPadding(dp(10), dp(8), dp(8), dp(8));
+        panel.setBackground(makePanelBackground(Color.rgb(250, 244, 230), dp(14), 1, Color.rgb(236, 213, 159)));
+        panel.setVisibility(View.GONE);
+
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        panel.addView(preview, previewParams);
+
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(dp(54), dp(34));
+        clearParams.leftMargin = dp(8);
+        panel.addView(clearButton, clearParams);
+        return panel;
+    }
+
+    private TextView makeQuotePreviewText() {
+        TextView preview = new TextView(this);
+        preview.setTextSize(13);
+        preview.setTextColor(Color.rgb(92, 68, 28));
+        preview.setMaxLines(2);
+        preview.setEllipsize(TextUtils.TruncateAt.END);
+        preview.setIncludeFontPadding(false);
+        return preview;
+    }
+
+    private TextView makeQuoteClearButton() {
+        TextView button = makeActionChip("取消", Color.rgb(255, 251, 242), Color.rgb(132, 88, 18));
+        button.setTextSize(12);
+        button.setMinHeight(dp(34));
+        return button;
+    }
+
     private TextView makeLatestMessageButton() {
         TextView button = makeActionChip("↓ 最新", Color.rgb(231, 241, 255), Color.rgb(31, 96, 164));
         button.setTextSize(12);
@@ -3325,6 +3386,9 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.44", "聊天正文支持安卓原生选中文字。"));
+        v0.entries.add(new ReleaseEntry("0.44", "长按消息可引用整条或复制。"));
+        v0.entries.add(new ReleaseEntry("0.44", "选中文字菜单新增引用并自动拼接上下文。"));
         v0.entries.add(new ReleaseEntry("0.43", "复制按钮缩小并降低视觉重量。"));
         v0.entries.add(new ReleaseEntry("0.43", "聊天气泡垂直间距更紧凑。"));
         v0.entries.add(new ReleaseEntry("0.42", "新增嫦娥任务中枢任务卡。"));
@@ -4146,30 +4210,56 @@ public class MainActivity extends Activity {
         return "Codex 专业";
     }
 
+    private boolean hasPendingQuote(boolean sessionScope) {
+        String quote = sessionScope ? pendingSessionQuoteText : pendingMainQuoteText;
+        return quote != null && !quote.trim().isEmpty();
+    }
+
+    private String applyPendingQuote(String message, boolean sessionScope) {
+        String body = message == null ? "" : message.trim();
+        String quote = sessionScope ? pendingSessionQuoteText : pendingMainQuoteText;
+        if (quote == null || quote.trim().isEmpty()) {
+            return body;
+        }
+        String prefix = "参考你刚刚发送的消息：" + quote.trim();
+        return body.isEmpty() ? prefix : prefix + "\n\n" + body;
+    }
+
+    private String displayOutgoingMessage(String message, boolean hasImage) {
+        String body = message == null ? "" : message.trim();
+        if (!body.isEmpty()) {
+            return body;
+        }
+        return hasImage ? "[图片]" : "引用消息继续处理";
+    }
+
     private void sendMessage() {
         String message = input.getText().toString().trim();
         String imageBase64 = pendingImageBase64;
         String imageMimeType = pendingImageMimeType;
         Bitmap imageBitmap = pendingImageBitmap;
         boolean hasImage = imageBase64 != null && !imageBase64.isEmpty();
+        boolean hasQuote = hasPendingQuote(false);
+        String outboundMessage = applyPendingQuote(message, false);
         String chatTarget = selectedChatTarget;
 
-        if (message.isEmpty() && !hasImage) {
+        if (message.isEmpty() && !hasImage && !hasQuote) {
             appendLog("先写点内容或选择一张图片再发送。");
             return;
         }
 
         input.setText("");
+        clearPendingQuote(false);
         clearSelectedImage();
         setBusy(true);
         setDeliverySending(hasImage ? "嫦娥识图" : chatTargetDisplayName());
-        appendTextMessage("我", message.isEmpty() ? "[图片]" : message, true, imageBitmap);
+        appendTextMessage("我", displayOutgoingMessage(message, hasImage), true, imageBitmap);
         appendLog(hasImage ? "正在发送到嫦娥识图..." : "正在发送到 " + chatTargetDisplayName() + "...");
 
         executor.execute(() -> {
             try {
                 JSONObject request = new JSONObject();
-                request.put("message", message);
+                request.put("message", outboundMessage);
                 request.put("target", chatTarget);
                 request.put("route", chatTarget);
                 request.put("conversation", MAIN_CHAT_CONVERSATION);
@@ -4243,25 +4333,28 @@ public class MainActivity extends Activity {
     private void sendSessionMessage() {
         String sessionId = selectedCodexSessionId;
         String message = sessionInput == null ? "" : sessionInput.getText().toString().trim();
+        boolean hasQuote = hasPendingQuote(true);
+        String outboundMessage = applyPendingQuote(message, true);
         if (sessionId.isEmpty()) {
             appendLog("先从 Dashboard 选择一个 Codex session。");
             return;
         }
-        if (message.isEmpty()) {
+        if (message.isEmpty() && !hasQuote) {
             appendLog("先写点内容再发送到 Codex session。");
             return;
         }
 
         sessionInput.setText("");
+        clearPendingQuote(true);
         setSessionBusy(true);
         setSessionDeliverySending();
-        appendSessionTextMessage(sessionId, "我", message, true, null, new ArrayList<>());
+        appendSessionTextMessage(sessionId, "我", displayOutgoingMessage(message, false), true, null, new ArrayList<>());
         appendLog("正在发送到 Codex session：" + compactSessionTitle(selectedCodexSessionTitle));
 
         executor.execute(() -> {
             try {
                 JSONObject request = new JSONObject();
-                request.put("message", message);
+                request.put("message", outboundMessage);
                 request.put("target", TARGET_CODEX);
                 request.put("route", TARGET_CODEX);
                 request.put("conversation", "codex-session-" + sessionId);
@@ -4816,11 +4909,13 @@ public class MainActivity extends Activity {
         }
 
         String messageText = text == null ? "" : text;
-        renderRichContent(bubble, messageText, mine, allAttachments);
+        boolean sessionScope = targetMessageList == sessionMessageList;
+        renderRichContent(bubble, messageText, mine, allAttachments, speaker, sessionScope);
 
         View copyButton = makeCopyIconButton();
         String copyText = buildCopyText(messageText, allAttachments);
         copyButton.setOnClickListener(view -> copyMessageToClipboard(copyText));
+        setupMessageActions(row, bubble, speaker, copyText, sessionScope);
 
         LinearLayout messageBlock = new LinearLayout(this);
         messageBlock.setOrientation(LinearLayout.HORIZONTAL);
@@ -4854,27 +4949,64 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void renderRichContent(LinearLayout bubble, String text, boolean mine, List<MessageAttachment> attachments) {
+    private void setupMessageActions(View row, View bubble, String speaker, String copyText, boolean sessionScope) {
+        View.OnLongClickListener listener = view -> {
+            showMessageActionMenu(view, speaker, copyText, sessionScope);
+            return true;
+        };
+        row.setLongClickable(true);
+        row.setOnLongClickListener(listener);
+        bubble.setLongClickable(true);
+        bubble.setOnLongClickListener(listener);
+    }
+
+    private void showMessageActionMenu(View anchor, String speaker, String copyText, boolean sessionScope) {
+        PopupMenu popup = new PopupMenu(this, anchor);
+        popup.getMenu().add("引用");
+        popup.getMenu().add("复制");
+        popup.setOnMenuItemClickListener(item -> {
+            String action = item.getTitle() == null ? "" : item.getTitle().toString();
+            if ("引用".equals(action)) {
+                setPendingQuote(sessionScope, speaker, copyText);
+                return true;
+            }
+            if ("复制".equals(action)) {
+                copyMessageToClipboard(copyText);
+                return true;
+            }
+            return false;
+        });
+        popup.show();
+    }
+
+    private void renderRichContent(
+            LinearLayout bubble,
+            String text,
+            boolean mine,
+            List<MessageAttachment> attachments,
+            String speaker,
+            boolean sessionScope
+    ) {
         List<MessageAttachment> allAttachments = new ArrayList<>(attachments);
         String cleanText = extractMarkdownImageAttachments(text, allAttachments).trim();
         for (MessageAttachment attachment : extractFileLinks(cleanText)) {
             addAttachmentIfNew(allAttachments, attachment);
         }
         if (!cleanText.isEmpty()) {
-            renderMarkdownBlocks(bubble, cleanText, mine);
+            renderMarkdownBlocks(bubble, cleanText, mine, speaker, sessionScope);
         }
         for (MessageAttachment attachment : allAttachments) {
             renderAttachment(bubble, attachment, mine);
         }
     }
 
-    private void renderMarkdownBlocks(LinearLayout bubble, String text, boolean mine) {
+    private void renderMarkdownBlocks(LinearLayout bubble, String text, boolean mine, String speaker, boolean sessionScope) {
         String[] lines = text.replace("\r\n", "\n").split("\n", -1);
         StringBuilder paragraph = new StringBuilder();
         int index = 0;
         while (index < lines.length) {
             if (index + 1 < lines.length && looksLikeTableRow(lines[index]) && isTableSeparator(lines[index + 1])) {
-                flushParagraph(bubble, paragraph, mine);
+                flushParagraph(bubble, paragraph, mine, speaker, sessionScope);
                 List<String> tableLines = new ArrayList<>();
                 tableLines.add(lines[index]);
                 index += 2;
@@ -4882,7 +5014,7 @@ public class MainActivity extends Activity {
                     tableLines.add(lines[index]);
                     index++;
                 }
-                renderMarkdownTable(bubble, tableLines, mine);
+                renderMarkdownTable(bubble, tableLines, mine, speaker, sessionScope);
                 continue;
             }
             if (paragraph.length() > 0) {
@@ -4891,22 +5023,22 @@ public class MainActivity extends Activity {
             paragraph.append(lines[index]);
             index++;
         }
-        flushParagraph(bubble, paragraph, mine);
+        flushParagraph(bubble, paragraph, mine, speaker, sessionScope);
     }
 
-    private void flushParagraph(LinearLayout bubble, StringBuilder paragraph, boolean mine) {
+    private void flushParagraph(LinearLayout bubble, StringBuilder paragraph, boolean mine, String speaker, boolean sessionScope) {
         String block = paragraph.toString().trim();
         paragraph.setLength(0);
         if (block.isEmpty()) {
             return;
         }
-        TextView content = createRichTextView(block, mine);
+        TextView content = createRichTextView(block, mine, speaker, sessionScope);
         LinearLayout.LayoutParams params = matchWrap();
         params.topMargin = dp(4);
         bubble.addView(content, params);
     }
 
-    private TextView createRichTextView(String markdown, boolean mine) {
+    private TextView createRichTextView(String markdown, boolean mine, String speaker, boolean sessionScope) {
         TextView content = new TextView(this);
         content.setText(markdownToSpanned(markdown));
         content.setTextSize(15);
@@ -4916,6 +5048,43 @@ public class MainActivity extends Activity {
         content.setMovementMethod(LinkMovementMethod.getInstance());
         content.setLinksClickable(true);
         Linkify.addLinks(content, Linkify.WEB_URLS | Linkify.EMAIL_ADDRESSES);
+        content.setTextIsSelectable(true);
+        content.setCustomSelectionActionModeCallback(new ActionMode.Callback() {
+            @Override
+            public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+                menu.add(0, MENU_QUOTE_SELECTION, 0, "引用");
+                return true;
+            }
+
+            @Override
+            public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+                return false;
+            }
+
+            @Override
+            public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+                if (item.getItemId() != MENU_QUOTE_SELECTION) {
+                    return false;
+                }
+                int start = content.getSelectionStart();
+                int end = content.getSelectionEnd();
+                if (start > end) {
+                    int swap = start;
+                    start = end;
+                    end = swap;
+                }
+                CharSequence selected = start >= 0 && end > start
+                        ? content.getText().subSequence(start, end)
+                        : content.getText();
+                setPendingQuote(sessionScope, speaker, selected.toString());
+                mode.finish();
+                return true;
+            }
+
+            @Override
+            public void onDestroyActionMode(ActionMode mode) {
+            }
+        });
         return content;
     }
 
@@ -5037,7 +5206,7 @@ public class MainActivity extends Activity {
         return cells;
     }
 
-    private void renderMarkdownTable(LinearLayout bubble, List<String> tableLines, boolean mine) {
+    private void renderMarkdownTable(LinearLayout bubble, List<String> tableLines, boolean mine, String speaker, boolean sessionScope) {
         HorizontalScrollView horizontalScrollView = new HorizontalScrollView(this);
         horizontalScrollView.setHorizontalScrollBarEnabled(false);
         LinearLayout table = new LinearLayout(this);
@@ -5054,7 +5223,7 @@ public class MainActivity extends Activity {
             List<String> cells = rows.get(rowIndex);
             for (int columnIndex = 0; columnIndex < cells.size(); columnIndex++) {
                 String cell = cells.get(columnIndex);
-                TextView cellView = createRichTextView(cell, mine);
+                TextView cellView = createRichTextView(cell, mine, speaker, sessionScope);
                 cellView.setTextSize(13);
                 cellView.setTypeface(rowIndex == 0 ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
                 cellView.setGravity((rowIndex == 0 ? Gravity.CENTER : Gravity.START) | Gravity.CENTER_VERTICAL);
@@ -5296,6 +5465,58 @@ public class MainActivity extends Activity {
         }
         manager.setPrimaryClip(ClipData.newPlainText("元宵聊天内容", text == null ? "" : text));
         appendLog("已复制本条聊天内容。");
+    }
+
+    private void setPendingQuote(boolean sessionScope, String speaker, String text) {
+        String quote = buildQuoteText(speaker, text);
+        if (quote.isEmpty()) {
+            appendLog("这条消息没有可引用的文字。");
+            return;
+        }
+        if (sessionScope) {
+            pendingSessionQuoteText = quote;
+        } else {
+            pendingMainQuoteText = quote;
+        }
+        updateQuotePanel(sessionScope);
+        appendLog("已引用：" + compactOneLine(quote, 32));
+    }
+
+    private void clearPendingQuote(boolean sessionScope) {
+        if (sessionScope) {
+            pendingSessionQuoteText = "";
+        } else {
+            pendingMainQuoteText = "";
+        }
+        updateQuotePanel(sessionScope);
+    }
+
+    private void updateQuotePanel(boolean sessionScope) {
+        LinearLayout panel = sessionScope ? sessionQuotePanel : mainQuotePanel;
+        TextView preview = sessionScope ? sessionQuotePreview : mainQuotePreview;
+        String quote = sessionScope ? pendingSessionQuoteText : pendingMainQuoteText;
+        if (panel == null || preview == null) {
+            return;
+        }
+        if (quote == null || quote.trim().isEmpty()) {
+            panel.setVisibility(View.GONE);
+            preview.setText("");
+            return;
+        }
+        preview.setText("引用：" + compactOneLine(quote, 120));
+        panel.setVisibility(View.VISIBLE);
+    }
+
+    private String buildQuoteText(String speaker, String text) {
+        String clean = text == null ? "" : text.replaceAll("\\s+", " ").trim();
+        if (clean.isEmpty()) {
+            return "";
+        }
+        if (clean.length() > 800) {
+            clean = clean.substring(0, 800).trim() + "...";
+        }
+        String safeSpeaker = speaker == null ? "" : speaker.trim();
+        return safeSpeaker.isEmpty() ? clean : safeSpeaker + "：" + clean;
     }
 
     private String buildCopyText(String text, List<MessageAttachment> attachments) {

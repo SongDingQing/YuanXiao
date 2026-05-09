@@ -1,5 +1,14 @@
 # YuanXiao Change Log
 
+## 0.44
+
+- Enabled Android-native text selection on rendered chat text and markdown table cells.
+- Added whole-message quote/copy actions from a long-press menu on chat bubbles.
+- Added selected-text quote support through the Android text selection action menu.
+- Quote context now prefixes outgoing main ChangE and dedicated Codex-session requests with `参考你刚刚发送的消息：...`.
+- Added a compact quote preview above both chat composers with a cancel action.
+- Built and signature-verified local `yuanxiao-0.44.apk`; SHA256 `8c02b75de68488abdb206a5c6d40247ac91eff26f6d29cf9f62a6c006ad4bfb8`; latest Quark delivery remains `yuanxiao-0.42.apk` until the next `煮元宵`.
+
 ## 0.43
 
 - Shrank the external chat-copy icon from a prominent button into a smaller transparent two-rectangle icon.

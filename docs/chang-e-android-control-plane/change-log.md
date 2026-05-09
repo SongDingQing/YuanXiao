@@ -1,5 +1,12 @@
 # YuanXiao Change Log
 
+## 0.47
+
+- Added a tiny hollow-circle receipt indicator below outgoing user messages in dedicated Codex-session chats.
+- The receipt indicator turns into a check mark after ChangE confirms the session request has been accepted.
+- Persisted receipt state in local session history so re-rendered sent messages keep their checked state.
+- Built and signature-verified local `yuanxiao-0.47.apk`; SHA256 `b41398449e1b0f5b50023244ef7b8cce79361df7ad9b9575afbccf3c7000629d`; latest Quark delivery remains `yuanxiao-0.42.apk` until the next `煮元宵`.
+
 ## 0.46
 
 - Moved the dedicated Codex-session delivery/sync status from below the input box into the conversation header area.

@@ -152,6 +152,8 @@ public class MainActivity extends Activity {
     private String noticeSessionId = "";
     private String noticeSessionTitle = "";
     private float noticeTouchStartY = 0f;
+    private ReceiptStatusView latestSessionReceiptIndicator;
+    private String latestSessionReceiptSessionId = "";
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
     private final Handler inboxHandler = new Handler(Looper.getMainLooper());
     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
@@ -618,7 +620,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.46", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.47", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -3413,6 +3415,13 @@ public class MainActivity extends Activity {
         return button;
     }
 
+    private ReceiptStatusView makeReceiptStatusView(boolean read) {
+        ReceiptStatusView statusView = new ReceiptStatusView(this);
+        statusView.setRead(read);
+        statusView.setContentDescription(read ? "Codex 已收到" : "等待 Codex 收到");
+        return statusView;
+    }
+
     private class CopyIconView extends View {
         private final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF backRect = new RectF();
@@ -3456,6 +3465,45 @@ public class MainActivity extends Activity {
         }
     }
 
+    private class ReceiptStatusView extends View {
+        private final Paint circlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint checkPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private boolean read;
+
+        ReceiptStatusView(Context context) {
+            super(context);
+            circlePaint.setStyle(Paint.Style.STROKE);
+            circlePaint.setStrokeWidth(Math.max(1.1f, getResources().getDisplayMetrics().density * 1.15f));
+            checkPaint.setStyle(Paint.Style.STROKE);
+            checkPaint.setStrokeCap(Paint.Cap.ROUND);
+            checkPaint.setStrokeJoin(Paint.Join.ROUND);
+            checkPaint.setStrokeWidth(Math.max(1.4f, getResources().getDisplayMetrics().density * 1.45f));
+        }
+
+        void setRead(boolean value) {
+            read = value;
+            setContentDescription(read ? "Codex 已收到" : "等待 Codex 收到");
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float centerX = getWidth() / 2f;
+            float centerY = getHeight() / 2f;
+            float radius = Math.max(2f, Math.min(getWidth(), getHeight()) / 2f - dp(2));
+            int color = read ? Color.rgb(36, 140, 83) : Color.rgb(154, 169, 190);
+            circlePaint.setColor(color);
+            checkPaint.setColor(color);
+            canvas.drawCircle(centerX, centerY, radius, circlePaint);
+            if (!read) {
+                return;
+            }
+            canvas.drawLine(centerX - radius * 0.45f, centerY, centerX - radius * 0.12f, centerY + radius * 0.32f, checkPaint);
+            canvas.drawLine(centerX - radius * 0.12f, centerY + radius * 0.32f, centerX + radius * 0.48f, centerY - radius * 0.38f, checkPaint);
+        }
+    }
+
     private void addTinyButton(LinearLayout row, TextView button) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(42), dp(44));
         params.leftMargin = dp(6);
@@ -3475,6 +3523,8 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.47", "Session 发送消息增加空圆圈回执。"));
+        v0.entries.add(new ReleaseEntry("0.47", "嫦娥确认收到后回执变为打勾。"));
         v0.entries.add(new ReleaseEntry("0.46", "Session 同步状态移到标题区域。"));
         v0.entries.add(new ReleaseEntry("0.46", "标题下方改为复制 Session ID 按钮。"));
         v0.entries.add(new ReleaseEntry("0.45", "新消息弹窗改为紧凑通知卡。"));
@@ -4074,8 +4124,10 @@ public class MainActivity extends Activity {
             scrollToBottom(sessionScrollView);
             return;
         }
+        latestSessionReceiptIndicator = null;
+        latestSessionReceiptSessionId = "";
         for (SessionChatMessage item : history) {
-            appendTextMessageTo(
+            ReceiptStatusView receiptIndicator = appendTextMessageTo(
                     sessionMessageList,
                     sessionScrollView,
                     sessionChatRecords,
@@ -4084,8 +4136,14 @@ public class MainActivity extends Activity {
                     item.mine,
                     null,
                     item.attachments,
-                    false
+                    false,
+                    item.mine,
+                    item.acknowledged
             );
+            if (item.mine && !item.acknowledged) {
+                latestSessionReceiptIndicator = receiptIndicator;
+                latestSessionReceiptSessionId = selectedCodexSessionId;
+            }
         }
         scrollToBottom(sessionScrollView);
     }
@@ -4098,7 +4156,7 @@ public class MainActivity extends Activity {
             sessionMessageList.removeAllViews();
         }
         for (SessionChatMessage item : messages) {
-            appendTextMessageTo(
+            ReceiptStatusView receiptIndicator = appendTextMessageTo(
                     sessionMessageList,
                     sessionScrollView,
                     sessionChatRecords,
@@ -4107,8 +4165,14 @@ public class MainActivity extends Activity {
                     item.mine,
                     null,
                     item.attachments,
-                    false
+                    false,
+                    item.mine,
+                    item.acknowledged
             );
+            if (item.mine && !item.acknowledged) {
+                latestSessionReceiptIndicator = receiptIndicator;
+                latestSessionReceiptSessionId = selectedCodexSessionId;
+            }
         }
         scrollToBottom(sessionScrollView);
     }
@@ -4141,6 +4205,10 @@ public class MainActivity extends Activity {
                 localMatch.attachments = incoming.attachments;
                 localMatch.order = incoming.order;
                 localMatch.createdAt = incoming.createdAt;
+                localMatch.acknowledged = incoming.acknowledged;
+                if (localMatch.mine) {
+                    markLatestSessionReceiptRead(sessionId);
+                }
                 result.changed = true;
                 result.needsFullRender = true;
                 continue;
@@ -4193,7 +4261,7 @@ public class MainActivity extends Activity {
         String id = item.optString("id", "");
         long order = item.optLong("order", Long.MAX_VALUE / 2);
         String createdAt = item.optString("created_at", "");
-        return new SessionChatMessage(id, speaker, text, mine, attachments, order, createdAt);
+        return new SessionChatMessage(id, speaker, text, mine, attachments, order, createdAt, mine);
     }
 
     private SessionChatMessage findSessionMessageById(List<SessionChatMessage> history, String id) {
@@ -4796,6 +4864,7 @@ public class MainActivity extends Activity {
     }
 
     private void setSessionDeliveryAccepted() {
+        markLatestSessionReceiptRead(selectedCodexSessionId);
         setSessionDeliveryStatus("嫦娥已收到，等待 session 回复", Color.rgb(231, 241, 255), Color.rgb(31, 96, 164));
     }
 
@@ -4821,6 +4890,31 @@ public class MainActivity extends Activity {
 
     private void setSessionDeliveryStatus(String text, int backgroundColor, int textColor) {
         setDeliveryStatus(sessionDeliveryStatusBar, text, backgroundColor, textColor);
+    }
+
+    private void markLatestSessionReceiptRead(String sessionId) {
+        String cleanSessionId = sessionId == null ? "" : sessionId.trim();
+        if (cleanSessionId.isEmpty()) {
+            cleanSessionId = latestSessionReceiptSessionId;
+        }
+        if (cleanSessionId == null || cleanSessionId.isEmpty()) {
+            return;
+        }
+        List<SessionChatMessage> history = sessionChatHistories.get(cleanSessionId);
+        if (history != null) {
+            for (int i = history.size() - 1; i >= 0; i--) {
+                SessionChatMessage item = history.get(i);
+                if (item.mine && !item.acknowledged) {
+                    item.acknowledged = true;
+                    break;
+                }
+            }
+        }
+        if (latestSessionReceiptIndicator != null && cleanSessionId.equals(latestSessionReceiptSessionId)) {
+            latestSessionReceiptIndicator.setRead(true);
+            latestSessionReceiptIndicator = null;
+            latestSessionReceiptSessionId = "";
+        }
     }
 
     private void setDeliveryStatus(TextView targetBar, String text, int backgroundColor, int textColor) {
@@ -4913,15 +5007,17 @@ public class MainActivity extends Activity {
             history = new ArrayList<>();
             sessionChatHistories.put(sessionId, history);
         }
-        history.add(new SessionChatMessage(
+        SessionChatMessage localMessage = new SessionChatMessage(
                 "local-" + System.currentTimeMillis() + "-" + history.size(),
                 speaker,
                 text,
                 mine,
                 savedAttachments,
                 Long.MAX_VALUE / 2 + System.currentTimeMillis() % 1_000_000L,
-                nowLocalIso()
-        ));
+                nowLocalIso(),
+                !mine
+        );
+        history.add(localMessage);
         boolean trimmed = trimSessionHistory(history);
         if (!sessionId.equals(selectedCodexSessionId) || !sessionChatVisible || sessionMessageList == null) {
             return;
@@ -4933,10 +5029,26 @@ public class MainActivity extends Activity {
         if (sessionMessageList.getChildCount() == 1 && sessionChatRecords.isEmpty()) {
             sessionMessageList.removeAllViews();
         }
-        appendTextMessageTo(sessionMessageList, sessionScrollView, sessionChatRecords, speaker, text, mine, bitmap, savedAttachments);
+        ReceiptStatusView receiptIndicator = appendTextMessageTo(
+                sessionMessageList,
+                sessionScrollView,
+                sessionChatRecords,
+                speaker,
+                text,
+                mine,
+                bitmap,
+                savedAttachments,
+                true,
+                mine,
+                localMessage.acknowledged
+        );
+        if (mine && !localMessage.acknowledged) {
+            latestSessionReceiptIndicator = receiptIndicator;
+            latestSessionReceiptSessionId = sessionId;
+        }
     }
 
-    private void appendTextMessageTo(
+    private ReceiptStatusView appendTextMessageTo(
             LinearLayout targetMessageList,
             ScrollView targetScrollView,
             List<ChatRecord> targetRecords,
@@ -4946,10 +5058,10 @@ public class MainActivity extends Activity {
             Bitmap bitmap,
             List<MessageAttachment> attachments
     ) {
-        appendTextMessageTo(targetMessageList, targetScrollView, targetRecords, speaker, text, mine, bitmap, attachments, true);
+        return appendTextMessageTo(targetMessageList, targetScrollView, targetRecords, speaker, text, mine, bitmap, attachments, true);
     }
 
-    private void appendTextMessageTo(
+    private ReceiptStatusView appendTextMessageTo(
             LinearLayout targetMessageList,
             ScrollView targetScrollView,
             List<ChatRecord> targetRecords,
@@ -4960,10 +5072,39 @@ public class MainActivity extends Activity {
             List<MessageAttachment> attachments,
             boolean scrollAfterAppend
     ) {
-        appendTextMessageTo(targetMessageList, targetScrollView, targetRecords, speaker, text, mine, bitmap, attachments, scrollAfterAppend, stamp());
+        return appendTextMessageTo(targetMessageList, targetScrollView, targetRecords, speaker, text, mine, bitmap, attachments, scrollAfterAppend, stamp());
     }
 
-    private void appendTextMessageTo(
+    private ReceiptStatusView appendTextMessageTo(
+            LinearLayout targetMessageList,
+            ScrollView targetScrollView,
+            List<ChatRecord> targetRecords,
+            String speaker,
+            String text,
+            boolean mine,
+            Bitmap bitmap,
+            List<MessageAttachment> attachments,
+            boolean scrollAfterAppend,
+            boolean showReceipt,
+            boolean receiptRead
+    ) {
+        return appendTextMessageTo(
+                targetMessageList,
+                targetScrollView,
+                targetRecords,
+                speaker,
+                text,
+                mine,
+                bitmap,
+                attachments,
+                scrollAfterAppend,
+                stamp(),
+                showReceipt,
+                receiptRead
+        );
+    }
+
+    private ReceiptStatusView appendTextMessageTo(
             LinearLayout targetMessageList,
             ScrollView targetScrollView,
             List<ChatRecord> targetRecords,
@@ -4975,8 +5116,38 @@ public class MainActivity extends Activity {
             boolean scrollAfterAppend,
             String timeLabel
     ) {
+        return appendTextMessageTo(
+                targetMessageList,
+                targetScrollView,
+                targetRecords,
+                speaker,
+                text,
+                mine,
+                bitmap,
+                attachments,
+                scrollAfterAppend,
+                timeLabel,
+                false,
+                true
+        );
+    }
+
+    private ReceiptStatusView appendTextMessageTo(
+            LinearLayout targetMessageList,
+            ScrollView targetScrollView,
+            List<ChatRecord> targetRecords,
+            String speaker,
+            String text,
+            boolean mine,
+            Bitmap bitmap,
+            List<MessageAttachment> attachments,
+            boolean scrollAfterAppend,
+            String timeLabel,
+            boolean showReceipt,
+            boolean receiptRead
+    ) {
         if (targetMessageList == null || targetScrollView == null) {
-            return;
+            return null;
         }
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -5035,13 +5206,29 @@ public class MainActivity extends Activity {
         copyParams.bottomMargin = dp(1);
         messageBlock.addView(copyButton, copyParams);
 
+        ReceiptStatusView receiptIndicator = null;
+        LinearLayout messageColumn = new LinearLayout(this);
+        messageColumn.setOrientation(LinearLayout.VERTICAL);
+        messageColumn.setGravity(mine ? Gravity.END : Gravity.START);
+        messageColumn.addView(messageBlock, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        if (showReceipt && mine) {
+            receiptIndicator = makeReceiptStatusView(receiptRead);
+            LinearLayout.LayoutParams receiptParams = new LinearLayout.LayoutParams(dp(14), dp(14));
+            receiptParams.topMargin = dp(2);
+            receiptParams.rightMargin = dp(26);
+            messageColumn.addView(receiptIndicator, receiptParams);
+        }
+
         LinearLayout.LayoutParams bubbleParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
         bubbleParams.leftMargin = mine ? dp(48) : 0;
         bubbleParams.rightMargin = mine ? 0 : dp(48);
-        row.addView(messageBlock, bubbleParams);
+        row.addView(messageColumn, bubbleParams);
         targetMessageList.addView(row, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -5052,6 +5239,7 @@ public class MainActivity extends Activity {
         if (scrollAfterAppend) {
             scrollToBottom(targetScrollView);
         }
+        return receiptIndicator;
     }
 
     private void setupMessageActions(View row, View bubble, String speaker, String copyText, boolean sessionScope) {
@@ -6097,6 +6285,7 @@ public class MainActivity extends Activity {
         List<MessageAttachment> attachments;
         long order;
         String createdAt;
+        boolean acknowledged;
 
         SessionChatMessage(
                 String id,
@@ -6105,7 +6294,8 @@ public class MainActivity extends Activity {
                 boolean mine,
                 List<MessageAttachment> attachments,
                 long order,
-                String createdAt
+                String createdAt,
+                boolean acknowledged
         ) {
             this.id = id == null ? "" : id;
             this.speaker = speaker == null ? "" : speaker;
@@ -6114,6 +6304,7 @@ public class MainActivity extends Activity {
             this.attachments = attachments == null ? new ArrayList<>() : new ArrayList<>(attachments);
             this.order = order;
             this.createdAt = createdAt == null ? "" : createdAt;
+            this.acknowledged = acknowledged;
         }
     }
 }

@@ -90,6 +90,11 @@ public class MainActivity extends Activity {
     private static final String PLAN_CEO_SESSION_URL = endpoint("/api/plan/ceo/session");
     private static final String QUEUE_REORDER_URL = endpoint("/api/queue/reorder");
     private static final String TASKS_URL = endpoint("/api/v1/tasks?limit=40");
+    private static final String RUNNER_ADAPTERS_URL = endpoint("/api/v1/runner-adapters");
+    private static final String CAPABILITIES_URL = endpoint("/api/v1/capabilities");
+    private static final String WORKFLOW_NODES_URL = endpoint("/api/v1/workflow-nodes?limit=20");
+    private static final String TYPED_CARDS_URL = endpoint("/api/v1/cards?limit=20");
+    private static final String MOBILE_SMOKE_RUNS_URL = endpoint("/api/v1/mobile-smoke-runs?limit=5");
     private static final String NOTIFICATION_CHANNEL_ID = "yuanxiao_messages";
     private static final String PREFS_NAME = "yuanxiao_state";
     private static final String KEY_LAST_INBOX_ID = "last_inbox_id";
@@ -239,6 +244,10 @@ public class MainActivity extends Activity {
     private LinearLayout taskList;
     private TextView taskSummary;
     private TextView taskUpdated;
+    private LinearLayout controlPlanePanel;
+    private TextView controlPlaneSummary;
+    private TextView controlPlaneDetail;
+    private TextView controlPlaneEvidence;
     private LinearLayout sessionQueuePanel;
     private LinearLayout sessionQueueTaskList;
     private TextView sessionQueueSummary;
@@ -334,6 +343,7 @@ public class MainActivity extends Activity {
     private String selectedCodexSessionTitle = "";
     private String lastSessionQueueSignature = "";
     private String lastTaskListSignature = "";
+    private String lastControlPlaneSignature = "";
     private boolean sessionReturnToPlan = false;
     private JSONObject lastDashboardResponse;
     private final List<String> lastPlanProjectIds = new ArrayList<>();
@@ -620,7 +630,7 @@ public class MainActivity extends Activity {
         logButtonParams.leftMargin = dp(8);
         headerTools.addView(logButton, logButtonParams);
 
-        TextView versionBadge = makeActionChip("v0.49", Color.rgb(31, 111, 235), Color.WHITE);
+        TextView versionBadge = makeActionChip("v0.50", Color.rgb(31, 111, 235), Color.WHITE);
         LinearLayout.LayoutParams versionParams = weightedWrap(1f);
         versionParams.leftMargin = dp(8);
         headerTools.addView(versionBadge, versionParams);
@@ -1154,6 +1164,46 @@ public class MainActivity extends Activity {
         stats.addView(taskUpdated, updatedParams);
         headerCard.addView(stats, matchWrap());
 
+        controlPlanePanel = new LinearLayout(this);
+        controlPlanePanel.setOrientation(LinearLayout.VERTICAL);
+        controlPlanePanel.setPadding(dp(10), dp(8), dp(10), dp(8));
+        controlPlanePanel.setBackground(makePanelBackground(Color.rgb(248, 250, 253), dp(14), 1, Color.rgb(224, 231, 241)));
+        LinearLayout.LayoutParams controlParams = matchWrap();
+        controlParams.topMargin = dp(8);
+        headerCard.addView(controlPlanePanel, controlParams);
+
+        LinearLayout controlTop = new LinearLayout(this);
+        controlTop.setOrientation(LinearLayout.HORIZONTAL);
+        controlTop.setGravity(Gravity.CENTER_VERTICAL);
+        TextView controlTitle = new TextView(this);
+        controlTitle.setText("控制面");
+        controlTitle.setTextSize(13);
+        controlTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        controlTitle.setTextColor(Color.rgb(36, 45, 60));
+        controlTop.addView(controlTitle, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        controlPlaneSummary = makeBadge("读取中", Color.rgb(236, 243, 249), Color.rgb(38, 83, 111));
+        controlPlaneSummary.setTextSize(11);
+        controlTop.addView(controlPlaneSummary, new LinearLayout.LayoutParams(dp(132), dp(28)));
+        controlPlanePanel.addView(controlTop, matchWrap());
+
+        controlPlaneDetail = new TextView(this);
+        controlPlaneDetail.setText("runner · 能力 · typed cards · smoke");
+        controlPlaneDetail.setTextSize(12);
+        controlPlaneDetail.setTextColor(Color.rgb(91, 101, 116));
+        controlPlaneDetail.setSingleLine(true);
+        controlPlaneDetail.setEllipsize(TextUtils.TruncateAt.END);
+        controlPlaneDetail.setPadding(0, dp(6), 0, 0);
+        controlPlanePanel.addView(controlPlaneDetail, matchWrap());
+
+        controlPlaneEvidence = new TextView(this);
+        controlPlaneEvidence.setText("等待嫦娥返回控制面状态");
+        controlPlaneEvidence.setTextSize(11);
+        controlPlaneEvidence.setTextColor(Color.rgb(112, 121, 137));
+        controlPlaneEvidence.setSingleLine(true);
+        controlPlaneEvidence.setEllipsize(TextUtils.TruncateAt.END);
+        controlPlaneEvidence.setPadding(0, dp(4), 0, 0);
+        controlPlanePanel.addView(controlPlaneEvidence, matchWrap());
+
         taskList = new LinearLayout(this);
         taskList.setOrientation(LinearLayout.VERTICAL);
         taskList.setPadding(dp(6), dp(6), dp(6), dp(6));
@@ -1636,8 +1686,12 @@ public class MainActivity extends Activity {
         taskSyncInFlight = true;
         executor.execute(() -> {
             try {
-                JSONObject response = getJson(TASKS_URL);
-                runOnUiThread(() -> renderTaskCards(response));
+                JSONObject response = getJson(TASKS_URL, 20_000);
+                JSONObject controlPlane = readControlPlaneSnapshot();
+                runOnUiThread(() -> {
+                    renderTaskCards(response);
+                    renderControlPlaneSnapshot(controlPlane);
+                });
                 taskErrorLogged = false;
             } catch (Exception exception) {
                 if (!taskErrorLogged) {
@@ -1649,6 +1703,34 @@ public class MainActivity extends Activity {
                 taskSyncInFlight = false;
             }
         });
+    }
+
+    private JSONObject readControlPlaneSnapshot() {
+        JSONObject snapshot = new JSONObject();
+        try {
+            snapshot.put("runners", safeGetControlJson(RUNNER_ADAPTERS_URL));
+            snapshot.put("capabilities", safeGetControlJson(CAPABILITIES_URL));
+            snapshot.put("workflow_nodes", safeGetControlJson(WORKFLOW_NODES_URL));
+            snapshot.put("cards", safeGetControlJson(TYPED_CARDS_URL));
+            snapshot.put("smoke_runs", safeGetControlJson(MOBILE_SMOKE_RUNS_URL));
+            snapshot.put("time", stamp());
+        } catch (Exception ignored) {
+        }
+        return snapshot;
+    }
+
+    private JSONObject safeGetControlJson(String targetUrl) {
+        try {
+            return getJson(targetUrl, 15_000);
+        } catch (Exception exception) {
+            JSONObject error = new JSONObject();
+            try {
+                error.put("status", "error");
+                error.put("error", exception.getMessage());
+            } catch (Exception ignored) {
+            }
+            return error;
+        }
     }
 
     private String sessionQueueTasksUrl() throws Exception {
@@ -2179,6 +2261,7 @@ public class MainActivity extends Activity {
 
     private void renderTaskError(String message) {
         lastTaskListSignature = "error:" + message;
+        renderControlPlaneError(message);
         if (taskSummary != null) {
             taskSummary.setText("不可用\n任务");
         }
@@ -2195,6 +2278,20 @@ public class MainActivity extends Activity {
         error.setTextColor(Color.rgb(166, 63, 40));
         error.setPadding(dp(12), dp(16), dp(12), dp(16));
         taskList.addView(error, matchWrap());
+    }
+
+    private void renderControlPlaneError(String message) {
+        lastControlPlaneSignature = "error:" + message;
+        if (controlPlaneSummary != null) {
+            controlPlaneSummary.setText("不可用");
+        }
+        if (controlPlaneDetail != null) {
+            controlPlaneDetail.setText("控制面读取失败：" + compactOneLine(message, 48));
+            controlPlaneDetail.setTextColor(Color.rgb(166, 63, 40));
+        }
+        if (controlPlaneEvidence != null) {
+            controlPlaneEvidence.setText("任务账本仍会继续尝试刷新");
+        }
     }
 
     private void renderCodexDashboard(JSONObject response) {
@@ -2288,6 +2385,134 @@ public class MainActivity extends Activity {
             }
             LinearLayout.LayoutParams params = sessionRowParams();
             taskList.addView(makeTaskCard(task), params);
+        }
+    }
+
+    private void renderControlPlaneSnapshot(JSONObject snapshot) {
+        if (controlPlanePanel == null || snapshot == null) {
+            return;
+        }
+        String signature = controlPlaneSignature(snapshot);
+        if (signature.equals(lastControlPlaneSignature)) {
+            return;
+        }
+        lastControlPlaneSignature = signature;
+
+        JSONObject runners = snapshot.optJSONObject("runners");
+        JSONObject capabilities = snapshot.optJSONObject("capabilities");
+        JSONObject nodes = snapshot.optJSONObject("workflow_nodes");
+        JSONObject cards = snapshot.optJSONObject("cards");
+        JSONObject smokeRuns = snapshot.optJSONObject("smoke_runs");
+
+        JSONObject runnerSummary = runners == null ? null : runners.optJSONObject("summary");
+        JSONObject capabilitySummary = capabilities == null ? null : capabilities.optJSONObject("summary");
+        JSONObject nodeSummary = nodes == null ? null : nodes.optJSONObject("summary");
+        JSONObject cardSummary = cards == null ? null : cards.optJSONObject("summary");
+
+        int runnerCount = runnerSummary == null ? jsonArrayLength(runners, "adapters") : runnerSummary.optInt("adapter_count", 0);
+        int availableRunners = runnerSummary == null ? 0 : runnerSummary.optInt("available_count", 0);
+        int enabledCapabilities = capabilitySummary == null ? 0 : capabilitySummary.optInt("enabled_count", 0);
+        int quarantinedCapabilities = capabilitySummary == null ? 0 : capabilitySummary.optInt("quarantined_count", 0);
+        int nodeCount = nodeSummary == null ? jsonArrayLength(nodes, "nodes") : nodeSummary.optInt("node_count", 0);
+        int runningNodes = nodeSummary == null ? 0 : nodeSummary.optInt("running_count", 0);
+        int blockedNodes = nodeSummary == null ? 0 : nodeSummary.optInt("blocked_count", 0);
+        int pendingCards = cardSummary == null ? 0 : cardSummary.optInt("pending_count", 0);
+        int approvalCards = cardSummary == null ? 0 : cardSummary.optInt("approval_count", 0);
+        int failureCards = cardSummary == null ? 0 : cardSummary.optInt("failure_count", 0);
+
+        boolean hasError = isControlError(runners)
+                || isControlError(capabilities)
+                || isControlError(nodes)
+                || isControlError(cards)
+                || isControlError(smokeRuns);
+        if (controlPlaneSummary != null) {
+            controlPlaneSummary.setText(hasError ? "部分不可用" : availableRunners + "/" + runnerCount + " runner");
+            controlPlaneSummary.setTextColor(hasError ? Color.rgb(166, 63, 40) : Color.rgb(38, 83, 111));
+        }
+        if (controlPlaneDetail != null) {
+            controlPlaneDetail.setTextColor(Color.rgb(91, 101, 116));
+            controlPlaneDetail.setText(
+                    enabledCapabilities + " 能力"
+                            + (quarantinedCapabilities > 0 ? " · " + quarantinedCapabilities + " 隔离" : "")
+                            + " · " + nodeCount + " 节点"
+                            + (runningNodes > 0 ? " · " + runningNodes + " 运行" : "")
+                            + (blockedNodes > 0 ? " · " + blockedNodes + " 阻塞" : "")
+                            + " · " + pendingCards + " 待处理卡"
+            );
+        }
+        if (controlPlaneEvidence != null) {
+            String smokeLine = latestSmokeRunLine(smokeRuns);
+            String cardLine = approvalCards + " 审批卡" + (failureCards > 0 ? " · " + failureCards + " 失败卡" : "");
+            controlPlaneEvidence.setText(smokeLine.isEmpty() ? cardLine : cardLine + " · " + smokeLine);
+        }
+    }
+
+    private boolean isControlError(JSONObject response) {
+        return response == null || "error".equalsIgnoreCase(response.optString("status", ""));
+    }
+
+    private int jsonArrayLength(JSONObject response, String key) {
+        JSONArray array = response == null ? null : response.optJSONArray(key);
+        return array == null ? 0 : array.length();
+    }
+
+    private String latestSmokeRunLine(JSONObject smokeRuns) {
+        JSONArray runs = smokeRuns == null ? null : smokeRuns.optJSONArray("runs");
+        if (runs == null || runs.length() == 0) {
+            return "";
+        }
+        JSONObject run = runs.optJSONObject(0);
+        if (run == null) {
+            return "";
+        }
+        String status = run.optString("status", "");
+        String runId = compactOneLine(run.optString("run_id", ""), 24);
+        return "smoke " + (status.isEmpty() ? "未知" : status) + (runId.isEmpty() ? "" : " · " + runId);
+    }
+
+    private String controlPlaneSignature(JSONObject snapshot) {
+        StringBuilder builder = new StringBuilder();
+        appendControlSignature(builder, snapshot.optJSONObject("runners"), "adapters");
+        appendControlSignature(builder, snapshot.optJSONObject("capabilities"), "capabilities");
+        appendControlSignature(builder, snapshot.optJSONObject("workflow_nodes"), "nodes");
+        appendControlSignature(builder, snapshot.optJSONObject("cards"), "cards");
+        appendControlSignature(builder, snapshot.optJSONObject("smoke_runs"), "runs");
+        return builder.toString();
+    }
+
+    private void appendControlSignature(StringBuilder builder, JSONObject response, String arrayKey) {
+        if (response == null) {
+            builder.append("|missing");
+            return;
+        }
+        builder.append('|').append(response.optString("status", ""));
+        JSONObject summary = response.optJSONObject("summary");
+        if (summary != null) {
+            builder.append(':').append(summary.toString());
+        }
+        JSONArray array = response.optJSONArray(arrayKey);
+        if (array == null) {
+            return;
+        }
+        builder.append(':').append(array.length());
+        int max = Math.min(array.length(), 6);
+        for (int i = 0; i < max; i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+            builder.append(':')
+                    .append(firstNonEmpty(
+                            item.optString("adapter_id", ""),
+                            item.optString("capability_id", ""),
+                            item.optString("node_id", ""),
+                            item.optString("card_id", ""),
+                            item.optString("run_id", "")
+                    ))
+                    .append('/')
+                    .append(item.optString("status", item.optString("state", "")))
+                    .append('/')
+                    .append(item.optString("updated_at", ""));
         }
     }
 
@@ -3523,6 +3748,9 @@ public class MainActivity extends Activity {
     private void seedChangeLog() {
         releaseGroups.clear();
         ReleaseGroup v0 = new ReleaseGroup("v0 内测线");
+        v0.entries.add(new ReleaseEntry("0.50", "任务页新增控制面概览。"));
+        v0.entries.add(new ReleaseEntry("0.50", "显示 runner、能力、卡片和 smoke 状态。"));
+        v0.entries.add(new ReleaseEntry("0.50", "煮元宵打包上传并同步 GitHub。"));
         v0.entries.add(new ReleaseEntry("0.49", "修复使用者气泡左侧被裁切。"));
         v0.entries.add(new ReleaseEntry("0.49", "煮汤圆打包上传并同步 GitHub。"));
         v0.entries.add(new ReleaseEntry("0.48", "煮元宵优化回执确认避免整页重绘。"));
@@ -4609,6 +4837,12 @@ public class MainActivity extends Activity {
 
     private JSONObject getJson(String targetUrl) throws Exception {
         HttpsURLConnection connection = openConnection(targetUrl, 60_000);
+        connection.setRequestMethod("GET");
+        return readJson(connection);
+    }
+
+    private JSONObject getJson(String targetUrl, int readTimeoutMs) throws Exception {
+        HttpsURLConnection connection = openConnection(targetUrl, readTimeoutMs);
         connection.setRequestMethod("GET");
         return readJson(connection);
     }

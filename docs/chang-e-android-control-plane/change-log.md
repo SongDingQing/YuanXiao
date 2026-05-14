@@ -1,13 +1,18 @@
 # YuanXiao Change Log
 
-## 0.50-dev
+## 0.50
 
 - Added the first source-level agent-control-plane contracts for runner adapters, capability registry, workflow nodes, typed cards, and mobile smoke benchmark runs.
 - Extended the Mac mini bridge task ledger with SQLite tables, seed data, audit events, and read/write helpers for the new control-plane layer.
 - Added public/bridge API routes for `/api/v1/runner-adapters`, `/api/v1/capabilities`, `/api/v1/workflow-nodes`, `/api/v1/cards`, `/api/v1/cards/answer`, and `/api/v1/mobile-smoke-runs`.
 - Updated ChangE relay forwarding and `/health` capability flags so YuanXiao can discover the new control-plane APIs.
 - Added sanitized public documentation for the new contracts and API shapes without committing private IPs, keys, or machine-specific config.
-- APK UI and Quark delivery remain on `yuanxiao-0.49.apk` until the next `煮元宵`.
+- Added the Android task-page `控制面` overview panel for runner, capability, workflow, typed-card, and smoke-run status.
+- Control-plane overview reads use bounded timeouts and partial-error rendering so one slow control API does not block the task ledger display.
+- Bumped the delivery APK to `yuanxiao-0.50.apk` with `versionCode=50`, `versionName=0.50`, and installed label `元宵`.
+- Built and signature-verified `yuanxiao-0.50.apk`; SHA256 `2d44de2c90bc4572a5b29c6d160ac7d225c493b12c3ea6a428a16f846de3544b`.
+- Public smoke tests passed for `/health`, tasks, runner adapters, capabilities, workflow nodes, typed cards, and mobile smoke runs.
+- Uploaded `yuanxiao-0.50.apk` to the existing Quark root/home `元宵` folder; Quark showed it in that folder with timestamp 2026-05-15 00:59.
 
 ## 0.49
 

@@ -473,7 +473,7 @@ Request shape:
 ```json
 {
   "run_id": "smoke-run-id",
-  "app_version": "0.49",
+  "app_version": "0.50",
   "server_version": "control-plane-v1",
   "device": "Huawei test device",
   "status": "passed",

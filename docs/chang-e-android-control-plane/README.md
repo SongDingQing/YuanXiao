@@ -20,9 +20,9 @@ Use the example config files as templates.
 
 ## Current Version
 
-- App version: `0.49`
-- Local build APK name: `yuanxiao-0.49.apk`
-- Latest Quark delivery APK: `yuanxiao-0.49.apk`
+- App version: `0.50`
+- Local build APK name: `yuanxiao-0.50.apk`
+- Latest Quark delivery APK: `yuanxiao-0.50.apk`
 - Installed Android label: `元宵`
 - Latest major behavior: bottom Hermes/Codex/Plan tabs, compact Codex session
   rows, persistent main ChangE chat, Codex session chat/history sync, Codex
@@ -38,4 +38,6 @@ Use the example config files as templates.
   task-center tab backed by a durable task ledger, event API, agent registry,
   stale-task blocking, tighter chat spacing with a subtler copy icon, and a
   source-level control-plane API foundation for runner adapters, capability
-  registry, workflow nodes, typed cards, and mobile smoke benchmark runs.
+  registry, workflow nodes, typed cards, and mobile smoke benchmark runs, plus
+  a task-center control-plane overview panel that summarizes those APIs in the
+  Android UI.

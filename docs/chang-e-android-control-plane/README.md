@@ -12,6 +12,7 @@ and professional/code work to Codex.
 - Mac mini bridge: `bridge/yuanxiao-hermes-bridge`
 - Async plan-state helper: `bridge/yuanxiao-hermes-bridge/yuanxiao_agent_scheduler.py`
 - Deployment templates and scripts: `ops`
+- Agent control-plane contracts: `agent-control-plane-contracts.md`
 
 Private infrastructure details, including relay hosts, IP addresses, SSH users,
 SSH keys, local Mac paths, admin tokens, and runtime logs, are not committed.
@@ -35,4 +36,6 @@ Use the example config files as templates.
   cleaner Codex session chat where ChangE transport receipts stay out of the
   message stream, lighter initial session-history rendering, the first ChangE
   task-center tab backed by a durable task ledger, event API, agent registry,
-  stale-task blocking, and tighter chat spacing with a subtler copy icon.
+  stale-task blocking, tighter chat spacing with a subtler copy icon, and a
+  source-level control-plane API foundation for runner adapters, capability
+  registry, workflow nodes, typed cards, and mobile smoke benchmark runs.

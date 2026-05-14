@@ -16,6 +16,7 @@ Native Android client and relay-side source for the private YuanXiao bridge used
 - Delivery APK name: `yuanxiao-0.49.apk`
 - Latest Quark delivery APK: `yuanxiao-0.49.apk`
 - Installed Android app label: `元宵`
+- Current source adds the first agent-control-plane contracts and APIs for runner adapters, capability registry, workflow nodes, typed cards, and mobile smoke runs; the APK UI has not consumed them yet.
 - Public relay: configured locally through `android/YuanXiao/local.properties` and `ops/config/yuanxiao.env`.
 - Standard delivery workflow: `煮元宵` means optimize, build, signature-verify, upload to Quark Netdisk folder `元宵`, push this repository, and send the Feishu/Yutu completion reminder.
 

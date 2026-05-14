@@ -1,5 +1,14 @@
 # YuanXiao Change Log
 
+## 0.50-dev
+
+- Added the first source-level agent-control-plane contracts for runner adapters, capability registry, workflow nodes, typed cards, and mobile smoke benchmark runs.
+- Extended the Mac mini bridge task ledger with SQLite tables, seed data, audit events, and read/write helpers for the new control-plane layer.
+- Added public/bridge API routes for `/api/v1/runner-adapters`, `/api/v1/capabilities`, `/api/v1/workflow-nodes`, `/api/v1/cards`, `/api/v1/cards/answer`, and `/api/v1/mobile-smoke-runs`.
+- Updated ChangE relay forwarding and `/health` capability flags so YuanXiao can discover the new control-plane APIs.
+- Added sanitized public documentation for the new contracts and API shapes without committing private IPs, keys, or machine-specific config.
+- APK UI and Quark delivery remain on `yuanxiao-0.49.apk` until the next `煮元宵`.
+
 ## 0.49
 
 - Added a responsive max-width layout for chat bubbles so outgoing user bubbles keep enough left breathing room and do not get clipped by the external copy icon.

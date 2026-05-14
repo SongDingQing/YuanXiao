@@ -296,7 +296,7 @@ Response shape:
       "position": 1,
       "task_summary": "Build task",
       "task_preview": "Longer task preview",
-      "project_dir": "~/project",
+      "project_dir": "workspace:project",
       "platform": "feishu",
       "queued_at": "2026-05-08T00:00:00+00:00",
       "updated_at": "2026-05-08T00:00:00+00:00",
@@ -325,5 +325,167 @@ Request shape:
 ```json
 {
   "queue_ids": ["20260508_120000_abcd1234", "20260508_120010_efgh5678"]
+}
+```
+
+## Agent Control Plane
+
+These endpoints expose the first structured control-plane layer for YuanXiao.
+They are designed for Android-native cards and status panels, and should avoid
+model quota usage unless a future runner explicitly performs work.
+
+`GET /api/v1/runner-adapters?status=`
+
+Returns configured runner adapters such as Codex, Hermes, ChangE relay, and
+future remote machines.
+
+Response shape:
+
+```json
+{
+  "status": "ok",
+  "schema_version": 1,
+  "adapters": [
+    {
+      "adapter_id": "runner_codex_local_default",
+      "display_name": "Codex · Mac mini",
+      "runner_type": "codex",
+      "client_mode": "desktop_cli_resume",
+      "machine_id": "macmini",
+      "status": "available",
+      "workspace_policy": {
+        "allowlist": ["workspace:yuanxiao"],
+        "denylist": ["secret:ssh"]
+      },
+      "capabilities": {
+        "supports_checkpoint": true,
+        "supports_subagents": true
+      },
+      "approval_policy": {
+        "default_mode": "ask_high_impact"
+      }
+    }
+  ],
+  "quota_cost": "none_db_scan_only"
+}
+```
+
+`GET /api/v1/capabilities?status=&side_effect_level=`
+
+Returns the capability registry used by the MCP/tool gateway layer. Each record
+includes source, protocol, side-effect level, secret policy, isolation, Android
+renderer hints, and audit requirements.
+
+`GET /api/v1/workflow-nodes?project_id=&workflow_id=&state=&limit=`
+
+Returns Plan/CEO orchestration nodes. YuanXiao should use this for router,
+orchestrator, subagent, evaluator, todo, checkpoint, failure, and verification
+progress views.
+
+`POST /api/v1/workflow-nodes`
+
+Creates or updates a workflow node.
+
+Request shape:
+
+```json
+{
+  "workflow_id": "workflow-id",
+  "node_id": "node-id",
+  "project_id": "plan-id",
+  "parent_node_id": "optional-parent",
+  "node_type": "subagent",
+  "state": "running",
+  "title": "执行层整理素材",
+  "owner": {
+    "runner_adapter_id": "runner_codex_local_default",
+    "session_id": "optional-session"
+  },
+  "todo": ["读取需求", "生成方案", "提交验证证据"],
+  "checkpoint": {
+    "label": "需求已确认"
+  },
+  "trace": {
+    "trace_id": "trace-id"
+  },
+  "policy": {
+    "approval_required": false
+  }
+}
+```
+
+`GET /api/v1/cards?task_id=&status=&card_type=&limit=`
+
+Returns typed cards for Android-native rendering. Supported card types include
+`approval`, `artifact`, `trace`, `failure`, `memory`, `checkpoint`, and
+`report`.
+
+`POST /api/v1/cards`
+
+Creates or updates a typed card.
+
+Request shape:
+
+```json
+{
+  "card_id": "card-id",
+  "card_type": "approval",
+  "task_id": "task-id",
+  "workflow_id": "workflow-id",
+  "node_id": "node-id",
+  "status": "pending",
+  "title": "是否允许发送外部消息",
+  "summary": "这会把内容发到外部服务。",
+  "actions": ["approve", "reject"],
+  "payload": {
+    "risk": "external_send"
+  }
+}
+```
+
+`POST /api/v1/cards/answer`
+
+Records an answer to a typed card without deleting the original card.
+
+Request shape:
+
+```json
+{
+  "card_id": "card-id",
+  "answer": "approve",
+  "actor": "主人",
+  "fields": {
+    "note": "允许本次发送"
+  }
+}
+```
+
+`GET /api/v1/mobile-smoke-runs?limit=`
+
+Returns recent YuanXiao mobile smoke benchmark runs and the required case list.
+
+`POST /api/v1/mobile-smoke-runs`
+
+Creates or updates a smoke benchmark run.
+
+Request shape:
+
+```json
+{
+  "run_id": "smoke-run-id",
+  "app_version": "0.49",
+  "server_version": "control-plane-v1",
+  "device": "Huawei test device",
+  "status": "passed",
+  "summary": {
+    "passed": 10,
+    "failed": 0
+  },
+  "cases": [
+    {
+      "id": "main_chat",
+      "status": "passed"
+    }
+  ]
 }
 ```

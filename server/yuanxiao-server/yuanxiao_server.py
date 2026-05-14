@@ -252,6 +252,12 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
                     "stuck_task_detection": True,
                     "task_events_api": True,
                     "task_agents_api": True,
+                    "control_plane_schema_version": 1,
+                    "runner_adapters_api": True,
+                    "capability_registry_api": True,
+                    "workflow_nodes_api": True,
+                    "typed_cards_api": True,
+                    "mobile_smoke_benchmark_api": True,
                     "queue_reorder": "queued_only",
                     "async_chat_default": ASYNC_CHAT_DEFAULT,
                     "bridge_timeout_seconds": HERMES_BRIDGE_TIMEOUT_SECONDS,
@@ -336,7 +342,24 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             response.setdefault("time", now_iso())
             self._send_json(response, status=status)
             return
-        if parsed.path in {"/api/v1/tasks", "/api/tasks", "/api/v1/events", "/api/events", "/api/v1/agents", "/api/agents"}:
+        if parsed.path in {
+            "/api/v1/tasks",
+            "/api/tasks",
+            "/api/v1/events",
+            "/api/events",
+            "/api/v1/agents",
+            "/api/agents",
+            "/api/v1/runner-adapters",
+            "/api/runner-adapters",
+            "/api/v1/capabilities",
+            "/api/capabilities",
+            "/api/v1/workflow-nodes",
+            "/api/workflow-nodes",
+            "/api/v1/cards",
+            "/api/cards",
+            "/api/v1/mobile-smoke-runs",
+            "/api/mobile-smoke-runs",
+        }:
             try:
                 status, response = forward_bridge_get(parsed.path, parsed.query)
             except Exception as exc:
@@ -403,6 +426,10 @@ class YuanXiaoHandler(BaseHTTPRequestHandler):
             "/api/plan/ceo/session",
             "/api/queue/reorder",
             "/api/v1/tasks",
+            "/api/v1/workflow-nodes",
+            "/api/v1/cards",
+            "/api/v1/cards/answer",
+            "/api/v1/mobile-smoke-runs",
         }:
             try:
                 payload = self._read_json_payload()

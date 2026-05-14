@@ -2330,6 +2330,12 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                     "stuck_task_detection": True,
                     "task_events_api": True,
                     "task_agents_api": True,
+                    "control_plane_schema_version": change_scheduler.CONTROL_PLANE_SCHEMA_VERSION,
+                    "runner_adapters_api": True,
+                    "capability_registry_api": True,
+                    "workflow_nodes_api": True,
+                    "typed_cards_api": True,
+                    "mobile_smoke_benchmark_api": True,
                     "queue_reorder": "queued_only",
                     "image_input": "enabled",
                     "image_recognition": "change-vision",
@@ -2378,6 +2384,55 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/api/v1/agents", "/api/agents"}:
             self._send_json(change_scheduler.list_agents())
             return
+        if parsed.path in {"/api/v1/runner-adapters", "/api/runner-adapters"}:
+            query = urllib.parse.parse_qs(parsed.query)
+            status_filter = str((query.get("status") or [""])[0]).strip()
+            self._send_json(change_scheduler.list_runner_adapters(status_filter))
+            return
+        if parsed.path in {"/api/v1/capabilities", "/api/capabilities"}:
+            query = urllib.parse.parse_qs(parsed.query)
+            status_filter = str((query.get("status") or [""])[0]).strip()
+            side_effect_level = str((query.get("side_effect_level") or [""])[0]).strip()
+            self._send_json(change_scheduler.list_capabilities(status_filter, side_effect_level))
+            return
+        if parsed.path in {"/api/v1/workflow-nodes", "/api/workflow-nodes"}:
+            query = urllib.parse.parse_qs(parsed.query)
+            try:
+                limit = max(1, min(200, int((query.get("limit") or ["50"])[0])))
+            except ValueError:
+                limit = 50
+            self._send_json(
+                change_scheduler.list_workflow_nodes(
+                    project_id=str((query.get("project_id") or [""])[0]).strip(),
+                    workflow_id=str((query.get("workflow_id") or [""])[0]).strip(),
+                    state=str((query.get("state") or [""])[0]).strip(),
+                    limit=limit,
+                )
+            )
+            return
+        if parsed.path in {"/api/v1/cards", "/api/cards"}:
+            query = urllib.parse.parse_qs(parsed.query)
+            try:
+                limit = max(1, min(200, int((query.get("limit") or ["50"])[0])))
+            except ValueError:
+                limit = 50
+            self._send_json(
+                change_scheduler.list_typed_cards(
+                    task_id=str((query.get("task_id") or [""])[0]).strip(),
+                    status=str((query.get("status") or [""])[0]).strip(),
+                    card_type=str((query.get("card_type") or [""])[0]).strip(),
+                    limit=limit,
+                )
+            )
+            return
+        if parsed.path in {"/api/v1/mobile-smoke-runs", "/api/mobile-smoke-runs"}:
+            query = urllib.parse.parse_qs(parsed.query)
+            try:
+                limit = max(1, min(100, int((query.get("limit") or ["20"])[0])))
+            except ValueError:
+                limit = 20
+            self._send_json(change_scheduler.list_mobile_smoke_runs(limit))
+            return
         if parsed.path == "/api/plan/projects":
             query = urllib.parse.parse_qs(parsed.query)
             try:
@@ -2412,6 +2467,10 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
         if parsed.path not in {
             "/api/chat",
             "/api/v1/tasks",
+            "/api/v1/workflow-nodes",
+            "/api/v1/cards",
+            "/api/v1/cards/answer",
+            "/api/v1/mobile-smoke-runs",
             "/api/codex/session/create",
             "/api/codex/session/rename",
             "/api/plan/agent/create",
@@ -2463,6 +2522,79 @@ class YuanXiaoHermesBridgeHandler(BaseHTTPRequestHandler):
                 metadata={"created_by": "yuanxiao"},
             )
             self._send_json({"status": "ok", "task": task, "time": now_iso()})
+            return
+
+        if parsed.path == "/api/v1/workflow-nodes":
+            try:
+                response = change_scheduler.upsert_workflow_node(payload)
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "workflow_node_update_failed",
+                        "detail": str(exc),
+                        "time": now_iso(),
+                    },
+                    status=500,
+                )
+                return
+            self._send_json(response)
+            return
+
+        if parsed.path == "/api/v1/cards":
+            try:
+                response = change_scheduler.upsert_typed_card(payload)
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "typed_card_update_failed",
+                        "detail": str(exc),
+                        "time": now_iso(),
+                    },
+                    status=500,
+                )
+                return
+            self._send_json(response)
+            return
+
+        if parsed.path == "/api/v1/cards/answer":
+            try:
+                response = change_scheduler.answer_typed_card(payload)
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "typed_card_answer_failed",
+                        "detail": str(exc),
+                        "time": now_iso(),
+                    },
+                    status=500,
+                )
+                return
+            status = 200
+            if response.get("error") == "missing_card_id":
+                status = 400
+            elif response.get("error") == "card_not_found":
+                status = 404
+            self._send_json(response, status=status)
+            return
+
+        if parsed.path == "/api/v1/mobile-smoke-runs":
+            try:
+                response = change_scheduler.upsert_mobile_smoke_run(payload)
+            except Exception as exc:
+                self._send_json(
+                    {
+                        "status": "error",
+                        "error": "mobile_smoke_run_update_failed",
+                        "detail": str(exc),
+                        "time": now_iso(),
+                    },
+                    status=500,
+                )
+                return
+            self._send_json(response)
             return
 
         if parsed.path == "/api/plan/agent/create":
